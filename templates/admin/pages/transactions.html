@@ -1,0 +1,509 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Транзакции{% endblock %}
+{% block page_title %}Управление транзакциями{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <p class="text-secondary">Мониторинг и управление двухфазными транзакциями</p>
+    
+    <div style="display: flex; gap: 12px; margin-top: 16px; align-items: center;">
+        <button class="btn primary" onclick="loadTransactions()">🔄 Обновить</button>
+        <button class="btn" onclick="exportTransactions()">📊 Экспорт</button>
+        <button class="btn" onclick="toggleFilters()">🔍 Фильтры</button>
+        
+        <!-- Фильтр по статусу -->
+        <select id="status-filter" onchange="applyFilters()" style="padding: 8px; border-radius: 6px; border: 1px solid var(--border-color);">
+            <option value="">Все статусы</option>
+            <option value="pending">Ожидание</option>
+            <option value="preparing">Подготовка</option>
+            <option value="prepared">Подготовлен</option>
+            <option value="committing">Выполнение</option>
+            <option value="completed">Завершен</option>
+            <option value="aborting">Отмена</option>
+            <option value="aborted">Отменен</option>
+        </select>
+        
+        <input type="search" id="search-input" placeholder="Поиск по ID, сумме..." onkeyup="applyFilters()" style="padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); width: 200px;">
+    </div>
+</div>
+
+<div id="transactions-loading" class="loading">Загрузка транзакций...</div>
+
+<div id="transactions-content" style="display: none;">
+
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID транзакции</th>
+                    <th>Сумма</th>
+                    <th>Банк отправителя</th>
+                    <th>Банк получателя</th>
+                    <th>Статус</th>
+                    <th>Время создания</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody id="transactions-table-body">
+                <!-- Данные будут загружены -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Пагинация -->
+<div id="pagination-container" style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+    <div class="text-secondary" id="pagination-info">
+        Загрузка...
+    </div>
+    <div style="display: flex; gap: 8px;" id="pagination-buttons">
+        <!-- Кнопки пагинации будут добавлены динамически -->
+    </div>
+</div>
+
+<!-- Статистика внизу -->
+<div class="grid cols-4 mb-6" style="margin-top: 32px;" id="transaction-stats">
+    <div class="card">
+        <h3>Успешных сегодня</h3>
+        <div style="font-size: 24px; font-weight: bold; color: var(--primary-600); margin: 8px 0;" id="completed-today">
+            0
+        </div>
+        <div class="text-sm muted">Завершенных</div>
+    </div>
+    
+    <div class="card">
+        <h3>В процессе</h3>
+        <div style="font-size: 24px; font-weight: bold; color: #f59e0b; margin: 8px 0;" id="in-progress">
+            0
+        </div>
+        <div class="text-sm muted">Двухфазные операции</div>
+    </div>
+    
+    <div class="card">
+        <h3>Отмененных</h3>
+        <div style="font-size: 24px; font-weight: bold; color: #dc2626; margin: 8px 0;" id="aborted-today">
+            0
+        </div>
+        <div class="text-sm muted">За сегодня</div>
+    </div>
+    
+<div class="card">
+        <h3>Общий объем</h3>
+        <div style="font-size: 24px; font-weight: bold; color: var(--text-primary); margin: 8px 0;" id="total-volume">
+            0 KGS
+        </div>
+        <div class="text-sm muted">За сегодня</div>
+    </div>
+</div>
+
+<!-- Модальное окно деталей транзакции -->
+<div id="transaction-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: var(--bg-secondary); padding: 24px; border-radius: 12px; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">Детали транзакции</h3>
+            <button onclick="hideTransactionModal()" style="background: none; border: none; font-size: 20px; cursor: pointer;">✕</button>
+        </div>
+        <div id="transaction-details">
+            <!-- Детали будут загружены -->
+        </div>
+    </div>
+</div>
+
+<script>
+let currentPage = 1;
+let pageSize = 20;
+let totalTransactions = 0;
+let allTransactions = [];
+let filteredTransactions = [];
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadTransactions();
+    
+    // Автообновление каждые 30 секунд
+    setInterval(loadTransactions, 30000);
+});
+
+async function loadTransactions() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        if (!token) {
+            window.location.href = '/admin/login';
+            return;
+        }
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/transactions'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки транзакций');
+        }
+        
+        const data = await response.json();
+        allTransactions = Array.isArray(data) ? data : (data.transactions || []);
+        filteredTransactions = [...allTransactions];
+        totalTransactions = allTransactions.length;
+        
+        displayTransactions();
+        updateStatistics();
+        updatePagination();
+        
+        document.getElementById('transactions-loading').style.display = 'none';
+        document.getElementById('transactions-content').style.display = 'block';
+        
+    } catch (error) {
+        console.error('Ошибка загрузки транзакций:', error);
+        showError('Ошибка загрузки транзакций: ' + error.message);
+    }
+}
+
+function displayTransactions() {
+    const tbody = document.getElementById('transactions-table-body');
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const transactions = filteredTransactions.slice(startIndex, endIndex);
+    
+    if (transactions.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center muted">Нет транзакций</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = transactions.map(transaction => `
+                        <tr>
+                            <td style="font-family: monospace; font-size: 12px;">
+                <strong>${transaction.transaction_id || transaction.id}</strong>
+                            </td>
+                            <td>
+                <strong>${transaction.amount || 0} ${transaction.currency || 'KGS'}</strong>
+                            </td>
+            <td>${transaction.sender_bank_name || transaction.payer_bank_code || transaction.sender_bank_code || 'N/A'}</td>
+            <td>${transaction.receiver_bank_name || transaction.receiver_bank_code || 'N/A'}</td>
+            <td>
+                <span class="badge ${getStatusBadgeClass(transaction.status)}">${getStatusText(transaction.status)}</span>
+                            </td>
+            <td>${formatDateTime(transaction.created_at)}</td>
+            <td>
+                <div class="table-actions">
+                    <button class="btn-table primary" onclick="viewTransactionDetails('${transaction.transaction_id || transaction.id}')" title="Детали">👁️</button>
+                    ${canCancelTransaction(transaction.status) ? `<button class="btn-table danger" onclick="cancelTransaction('${transaction.id}')" title="Отменить">⏹️</button>` : ''}
+                </div>
+                            </td>
+                        </tr>
+    `).join('');
+}
+
+function updateStatistics() {
+    const today = new Date().toDateString();
+    const todayTransactions = allTransactions.filter(t => 
+        new Date(t.created_at).toDateString() === today
+    );
+    
+    const completedToday = todayTransactions.filter(t => t.status === 'completed' || t.is_paid).length;
+    const inProgress = todayTransactions.filter(t => 
+        ['pending', 'preparing', 'prepared', 'committing'].includes(t.status)
+    ).length;
+    const abortedToday = todayTransactions.filter(t => t.status === 'aborted').length;
+    
+    const totalVolume = todayTransactions
+        .filter(t => t.status === 'completed' || t.is_paid)
+        .reduce((sum, t) => sum + (t.amount || 0), 0);
+    
+    document.getElementById('completed-today').textContent = completedToday;
+    document.getElementById('in-progress').textContent = inProgress;
+    document.getElementById('aborted-today').textContent = abortedToday;
+    document.getElementById('total-volume').textContent = `${totalVolume.toLocaleString()} KGS`;
+}
+
+function updatePagination() {
+    const totalPages = Math.ceil(filteredTransactions.length / pageSize);
+    const startIndex = (currentPage - 1) * pageSize + 1;
+    const endIndex = Math.min(currentPage * pageSize, filteredTransactions.length);
+    
+    document.getElementById('pagination-info').textContent = 
+        `Показано ${startIndex}-${endIndex} из ${filteredTransactions.length} транзакций`;
+    
+    const buttonsContainer = document.getElementById('pagination-buttons');
+    buttonsContainer.innerHTML = '';
+    
+    if (totalPages > 1) {
+        // Кнопка "Предыдущая"
+        if (currentPage > 1) {
+            buttonsContainer.innerHTML += `<button class="btn" onclick="changePage(${currentPage - 1})">← Предыдущая</button>`;
+        }
+        
+        // Номера страниц
+        for (let i = Math.max(1, currentPage - 2); i <= Math.min(totalPages, currentPage + 2); i++) {
+            const isActive = i === currentPage ? 'primary' : '';
+            buttonsContainer.innerHTML += `<button class="btn ${isActive}" onclick="changePage(${i})">${i}</button>`;
+        }
+        
+        // Кнопка "Следующая"
+        if (currentPage < totalPages) {
+            buttonsContainer.innerHTML += `<button class="btn" onclick="changePage(${currentPage + 1})">Следующая →</button>`;
+        }
+    }
+}
+
+function changePage(page) {
+    currentPage = page;
+    displayTransactions();
+    updatePagination();
+}
+
+function applyFilters() {
+    const statusFilter = document.getElementById('status-filter').value;
+    const searchTerm = document.getElementById('search-input').value.toLowerCase();
+    
+    filteredTransactions = allTransactions.filter(transaction => {
+        const matchesStatus = !statusFilter || transaction.status === statusFilter;
+        const matchesSearch = !searchTerm || 
+            (transaction.payment_reference && transaction.payment_reference.toLowerCase().includes(searchTerm)) ||
+            (transaction.id && transaction.id.toString().includes(searchTerm)) ||
+            (transaction.amount && transaction.amount.toString().includes(searchTerm));
+        
+        return matchesStatus && matchesSearch;
+    });
+    
+    currentPage = 1;
+    displayTransactions();
+    updatePagination();
+}
+
+async function viewTransactionDetails(transactionId) {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const transaction = allTransactions.find(t => t.id == transactionId || t.transaction_id == transactionId);
+        
+        if (!transaction) {
+            throw new Error('Транзакция не найдена');
+        }
+        
+        // Используем transaction_id или payment_reference или token для получения timeline
+        const identifier = transaction.transaction_id || transaction.payment_reference || transaction.token || transactionId;
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/transactions/${identifier}/timeline`), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            // Если не удалось получить timeline, показываем детали без него
+            console.warn('Не удалось загрузить timeline:', response.statusText);
+            showTransactionModal(transaction, [], null);
+            return;
+        }
+        
+        const timelineData = await response.json();
+        showTransactionModal(timelineData.transaction || transaction, timelineData.timeline || [], timelineData.technical);
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        // Показываем детали транзакции без timeline при ошибке
+        const transaction = allTransactions.find(t => t.id == transactionId || t.transaction_id == transactionId);
+        if (transaction) {
+            showTransactionModal(transaction, [], null);
+        } else {
+            alert('❌ Ошибка: ' + error.message);
+        }
+    }
+}
+
+function showTransactionModal(transaction, timeline, technicalData = null) {
+    const modal = document.getElementById('transaction-modal');
+    const detailsContainer = document.getElementById('transaction-details');
+    
+    // Получаем данные из правильной структуры
+    const paymentRequest = transaction.payment_request || transaction;
+    const transactionData = transaction.transaction || transaction;
+    
+    detailsContainer.innerHTML = `
+        <div class="grid cols-2" style="gap: 16px; margin-bottom: 20px;">
+            <div>
+                <h4>Основная информация</h4>
+                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px;">
+                    <div style="margin-bottom: 8px;"><strong>ID:</strong> ${transactionData.transaction_id || transactionData.id}</div>
+                    <div style="margin-bottom: 8px;"><strong>Token:</strong> <code style="font-size: 11px;">${transactionData.payment_token || transactionData.token || 'N/A'}</code></div>
+                    <div style="margin-bottom: 8px;"><strong>Сумма:</strong> ${paymentRequest.amount || transactionData.amount} ${paymentRequest.currency || transactionData.currency || 'KGS'}</div>
+                    <div style="margin-bottom: 8px;"><strong>Статус:</strong> <span class="badge ${getStatusBadgeClass(paymentRequest.status || transactionData.status)}">${getStatusText(paymentRequest.status || transactionData.status)}</span></div>
+                    <div style="margin-bottom: 8px;"><strong>Создана:</strong> ${formatDateTime(paymentRequest.created_at || transactionData.created_at)}</div>
+                    <div style="margin-bottom: 8px;"><strong>Обработана:</strong> ${formatDateTime(transactionData.processed_at)}</div>
+                </div>
+            </div>
+            <div>
+                <h4>Технические детали</h4>
+                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px;">
+                    <div style="margin-bottom: 8px;"><strong>Платежная система:</strong> QRPayHub</div>
+                    <div style="margin-bottom: 8px;"><strong>Тип транзакции:</strong> Двухфазный коммит</div>
+                    <div><strong>Банк:</strong> ${transactionData.bank_code || paymentRequest.receiver_bank_code || 'N/A'}</div>
+                </div>
+            </div>
+        </div>
+        
+        <h4>Таймлайн событий</h4>
+        <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px; max-height: 300px; overflow-y: auto;">
+            ${timeline && timeline.length > 0 ? 
+                timeline.map(event => `
+                    <div style="padding: 8px 0; border-bottom: 1px solid var(--border-color);">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <strong>${event.title || event.event || 'Событие'}</strong>
+                                <span class="badge ${event.status === 'success' ? 'ok' : event.status === 'error' ? 'err' : 'warn'}" style="margin-left: 8px; font-size: 10px;">${event.status || 'info'}</span>
+                            </div>
+                            <span class="text-sm muted">${formatDateTime(event.timestamp || event.created_at)}</span>
+                        </div>
+                        <div class="text-sm" style="margin-top: 4px;">${event.description || 'Нет описания'}</div>
+                    </div>
+                `).join('') : 
+                '<div class="text-sm muted" style="text-align: center; padding: 20px;">Нет событий в таймлайне. Создайте QR-код для начала транзакции.</div>'
+            }
+        </div>
+            
+        <h4>Технические логи</h4>
+        <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px; max-height: 200px; overflow-y: auto;">
+            ${technicalData && technicalData.logs && technicalData.logs.length > 0 ? 
+                technicalData.logs.map(log => `
+                    <div style="padding: 8px 0; border-bottom: 1px solid var(--border-color);">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <div>
+                                <strong>${log.request_type || 'Запрос'}</strong>
+                                <span class="badge ${log.status >= 200 && log.status < 300 ? 'ok' : 'err'}" style="margin-left: 8px; font-size: 10px;">${log.status || 'N/A'}</span>
+                            </div>
+                            <div style="font-size: 12px; color: var(--text-secondary);">
+                                ${formatDateTime(log.created_at)}
+                            </div>
+                        </div>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">
+                            ${log.endpoint || 'N/A'} - ${log.bank_code || 'N/A'}
+                        </div>
+                    </div>
+                `).join('') : 
+                '<div style="text-align: center; color: var(--text-secondary); padding: 20px;">Нет технических логов.</div>'
+            }
+        </div>
+        `;
+    
+    modal.style.display = 'flex';
+}
+
+function hideTransactionModal() {
+    document.getElementById('transaction-modal').style.display = 'none';
+}
+
+
+
+async function cancelTransaction(transactionId) {
+    const transaction = allTransactions.find(t => t.id === transactionId);
+    if (!transaction) {
+        alert('❌ Транзакция не найдена');
+        return;
+    }
+    
+    if (!confirm(`Отменить транзакцию на сумму ${transaction.amount} ${transaction.currency || 'KGS'}? Это действие нельзя отменить.`)) return;
+    
+    try {
+        const token = localStorage.getItem('admin_token');
+        const identifier = transaction.payment_reference || transaction.token || transactionId;
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/transactions/${identifier}/cancel`), {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Ошибка отмены транзакции');
+        }
+        
+        const result = await response.json();
+        alert('✅ ' + result.message);
+        loadTransactions();
+        hideTransactionModal();
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('❌ Ошибка: ' + error.message);
+    }
+}
+
+async function exportTransactions() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch('/api/v1/admin/payments/export', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка экспорта транзакций');
+        }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'transactions_export.csv';
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+    } catch (error) {
+        console.error('Ошибка экспорта:', error);
+        alert('❌ Ошибка экспорта: ' + error.message);
+    }
+}
+
+
+
+function toggleFilters() {
+    alert('🚧 Расширенные фильтры будут реализованы в следующей версии');
+}
+
+// Утилиты
+function getStatusBadgeClass(status) {
+    const classes = {
+        'pending': 'warn',
+        'preparing': 'warn',
+        'prepared': 'info',
+        'committing': 'warn',
+        'completed': 'ok',
+        'aborting': 'err',
+        'aborted': 'err'
+    };
+    return classes[status] || 'info';
+}
+
+function getStatusText(status) {
+    const texts = {
+        'pending': 'Ожидание',
+        'preparing': 'Подготовка',
+        'prepared': 'Подготовлен',
+        'committing': 'Выполнение',
+        'completed': 'Завершен',
+        'aborting': 'Отмена',
+        'aborted': 'Отменен'
+    };
+    return texts[status] || status;
+}
+
+function canCancelTransaction(status) {
+    return ['pending', 'preparing', 'prepared'].includes(status);
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleString('ru-RU');
+}
+
+function showError(message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error';
+    errorDiv.textContent = message;
+    document.querySelector('.content-area').insertBefore(errorDiv, document.querySelector('.content-area').firstChild);
+    
+    setTimeout(() => {
+        errorDiv.remove();
+    }, 5000);
+}
+</script>
+{% endblock %}

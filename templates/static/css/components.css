@@ -1,0 +1,220 @@
+/* QRPayHub Components */
+
+/* Кнопки */
+.btn { 
+    background: var(--bg-tertiary); 
+    color: var(--text-primary); 
+    border: 1px solid var(--border-color); 
+    padding: 8px 16px; 
+    border-radius: 8px; 
+    cursor: pointer; 
+    text-decoration: none; 
+    display: inline-flex;
+    align-items: center;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.btn:hover { 
+    background: var(--bg-tertiary);
+    opacity: 0.8; 
+}
+
+.btn.primary { 
+    background: var(--primary-600); 
+    border-color: var(--primary-600); 
+    color: #ffffff; 
+}
+
+.btn.primary:hover {
+    background: var(--primary-500);
+}
+
+.btn.danger {
+    background: #dc2626;
+    border-color: #dc2626;
+    color: white;
+}
+
+.btn.danger:hover {
+    background: #b91c1c;
+}
+
+/* Карточки */
+.card { 
+    background: var(--bg-secondary); 
+    border: 1px solid var(--border-color); 
+    border-radius: 12px; 
+    padding: 20px; 
+}
+
+/* Формы */
+label { 
+    display: block; 
+    margin: 12px 0 6px; 
+    color: var(--text-secondary); 
+    font-size: 14px; 
+    font-weight: 500;
+}
+
+input, select, textarea { 
+    width: 100%; 
+    padding: 12px; 
+    border-radius: 8px; 
+    border: 1px solid var(--border-color); 
+    background: var(--input-bg); 
+    color: var(--text-primary); 
+    font-size: 14px;
+    transition: border-color 0.2s ease;
+}
+
+input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--primary-600);
+    box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.1);
+}
+
+/* Таблицы */
+.table-container {
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    overflow: hidden;
+    margin: 16px 0;
+}
+
+table { 
+    width: 100%; 
+    border-collapse: collapse; 
+}
+
+th { 
+    background: var(--bg-tertiary);
+    padding: 16px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    border-bottom: 2px solid var(--border-color);
+}
+
+td { 
+    padding: 16px;
+    font-size: 14px;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--border-color);
+}
+
+tbody tr {
+    transition: background-color 0.15s ease;
+}
+
+tbody tr:hover {
+    background: var(--bg-primary);
+}
+
+tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* Действия в таблицах */
+.table-actions { 
+    display: flex; 
+    gap: 8px; 
+    align-items: center; 
+    white-space: nowrap; 
+}
+
+.btn-table {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.15s ease;
+    font-weight: 500;
+}
+
+.btn-table.primary {
+    background: var(--primary-600);
+    color: white;
+}
+
+.btn-table.primary:hover {
+    background: var(--primary-500);
+}
+
+.btn-table.secondary {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+.btn-table.secondary:hover {
+    background: var(--bg-primary);
+}
+
+.btn-table.danger {
+    background: #dc2626;
+    color: white;
+}
+
+.btn-table.danger:hover {
+    background: #b91c1c;
+}
+
+/* Бейджи */
+.badge { 
+    display: inline-block;
+    padding: 4px 10px; 
+    border-radius: 20px; 
+    font-size: 11px; 
+    font-weight: 600; 
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+.badge.ok { background: #dcfce7; color: #166534; }
+.badge.warn { background: #fef3c7; color: #92400e; }
+.badge.err { background: #fee2e2; color: #dc2626; }
+.badge.info { background: #dbeafe; color: #1d4ed8; }
+.badge.primary { background: #3b82f6; color: white; }
+
+/* Алерты */
+.alert {
+    padding: 16px;
+    border-radius: 8px;
+    margin: 16px 0;
+    border: 1px solid;
+}
+
+.alert-success {
+    background: #dcfce7;
+    color: #166534;
+    border-color: #bbf7d0;
+}
+
+.alert-error {
+    background: #fee2e2;
+    color: #dc2626;
+    border-color: #fecaca;
+}
+
+.alert-warning {
+    background: #fef3c7;
+    color: #92400e;
+    border-color: #fde68a;
+}
+
+.alert-info {
+    background: #dbeafe;
+    color: #1d4ed8;
+    border-color: #bfdbfe;
+}
+

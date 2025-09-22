@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light-green">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QRPayHub — Платформа QR-платежей</title>
+    <style>
+        :root {
+            --primary-600: #059669;
+            --primary-500: #10b981;
+            --primary-400: #34d399;
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --text-primary: #f8fafc;
+            --text-secondary: #cbd5e1;
+            --border-color: #334155;
+            --gradient: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-400) 100%);
+        }
+        html[data-theme="light-green"] {
+            --primary-600: #059669;
+            --primary-500: #10b981;
+            --primary-400: #34d399;
+            --bg-primary: #ffffff;
+            --bg-secondary: #f8fafc;
+            --bg-tertiary: #e2e8f0;
+            --text-primary: #0f172a;
+            --text-secondary: #334155;
+            --border-color: #cbd5e1;
+            --gradient: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-400) 100%);
+        }
+        
+        * { 
+            box-sizing: border-box; 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Inter, sans-serif; 
+        }
+        
+        body { 
+            margin: 0; 
+            background: var(--bg-primary); 
+            color: var(--text-primary); 
+            line-height: 1.6;
+        }
+        
+        .container { 
+            max-width: 1200px; 
+            margin: 0 auto; 
+            padding: 0 20px; 
+        }
+        
+        /* Header */
+        header { 
+            padding: 20px 0; 
+            border-bottom: 1px solid var(--border-color);
+        }
+        .header-content {
+            display: flex; 
+            align-items: center; 
+            justify-content: space-between;
+        }
+        .brand { 
+            display: flex; 
+            align-items: center; 
+            gap: 12px; 
+        }
+        .brand-badge { 
+            width: 48px; 
+            height: 48px; 
+            border-radius: 12px; 
+            background: var(--gradient); 
+            display: flex; 
+            align-items: center; 
+            justify-content: center; 
+            font-weight: 800; 
+            color: #ffffff; 
+            font-size: 18px;
+        }
+        .brand-text h1 { 
+            margin: 0; 
+            font-size: 28px; 
+            font-weight: 800;
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .brand-text .tagline { 
+            color: var(--text-secondary); 
+            font-size: 14px; 
+            margin: 0;
+        }
+        
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+        
+        /* Hero Section */
+        .hero {
+            padding: 80px 0;
+            text-align: center;
+            background: var(--gradient);
+            margin: 0 -20px;
+            position: relative;
+            overflow: hidden;
+        }
+        .hero-content {
+            position: relative;
+            z-index: 1;
+            color: white;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+        .hero h2 {
+            font-size: 48px;
+            font-weight: 800;
+            margin: 0 0 20px 0;
+            line-height: 1.2;
+        }
+        .hero p {
+            font-size: 20px;
+            margin: 0 0 40px 0;
+            opacity: 0.9;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        /* Buttons */
+        .btn { 
+            background: var(--bg-secondary); 
+            color: var(--text-primary); 
+            border: 1px solid var(--border-color); 
+            padding: 12px 24px; 
+            border-radius: 10px; 
+            text-decoration: none; 
+            display: inline-block; 
+            font-weight: 600;
+            transition: all 0.2s ease;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .btn.primary { 
+            background: white; 
+            border-color: white; 
+            color: var(--primary-600);
+        }
+        .btn.secondary {
+            background: transparent;
+            border-color: rgba(255,255,255,0.3);
+            color: white;
+        }
+        .btn.secondary:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        
+        .btns { 
+            display: flex; 
+            gap: 16px; 
+            justify-content: center;
+            flex-wrap: wrap; 
+        }
+        
+        /* Cards */
+        .card { 
+            background: var(--bg-secondary); 
+            border: 1px solid var(--border-color); 
+            border-radius: 16px; 
+            padding: 24px; 
+            transition: all 0.2s ease;
+        }
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+        }
+        
+        /* Sections */
+        .section {
+            padding: 80px 0;
+        }
+        .section-title {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+        .section-title h3 {
+            font-size: 36px;
+            font-weight: 800;
+            margin: 0 0 16px 0;
+        }
+        .section-title p {
+            font-size: 18px;
+            color: var(--text-secondary);
+            margin: 0;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        
+        /* Features Grid */
+        .features { 
+            display: grid; 
+            gap: 24px; 
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); 
+        }
+        .feature-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 16px;
+            background: var(--gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 20px;
+            font-size: 24px;
+        }
+        
+        /* Stats */
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 40px;
+            text-align: center;
+        }
+        .stat-number {
+            font-size: 48px;
+            font-weight: 800;
+            background: var(--gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 16px;
+        }
+        
+        /* Footer */
+        footer { 
+            margin-top: 40px; 
+            padding: 40px 0; 
+            border-top: 1px solid var(--border-color); 
+            text-align: center;
+            color: var(--text-secondary);
+        }
+        
+        /* Theme Toggle */
+        .theme-toggle {
+            background: var(--bg-tertiary);
+            border: none;
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 18px;
+            transition: all 0.2s ease;
+        }
+        .theme-toggle:hover {
+            transform: scale(1.1);
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h2 { font-size: 36px; }
+            .hero p { font-size: 18px; }
+            .btns { flex-direction: column; align-items: center; }
+            .btn { width: 200px; text-align: center; }
+            .features { grid-template-columns: 1fr; }
+            .stats { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+    <script>
+        (function themeInit(){
+            try{
+                const saved = localStorage.getItem('theme') || 'dark';
+                const theme = saved === 'light' ? 'light-green' : 'dark-green';
+                document.documentElement.setAttribute('data-theme', theme);
+            }catch{}
+        })();
+        function toggleTheme(){
+            const current = document.documentElement.getAttribute('data-theme') || 'dark-green';
+            const next = current === 'dark-green' ? 'light-green' : 'dark-green';
+            document.documentElement.setAttribute('data-theme', next);
+            try{ localStorage.setItem('theme', next === 'light-green' ? 'light' : 'dark'); }catch{}
+            const btn = document.getElementById('theme-toggle'); if(btn){ btn.textContent = next === 'light-green' ? '🌙' : '☀️'; }
+        }
+        document.addEventListener('DOMContentLoaded', function(){
+            const btn = document.getElementById('theme-toggle');
+            if(btn){ const current = document.documentElement.getAttribute('data-theme')||'dark-green'; btn.textContent = current === 'light-green' ? '🌙' : '☀️'; }
+        });
+    </script>
+</head>
+<body>
+    <!-- Header -->
+    <header>
+        <div class="container">
+            <div class="header-content">
+                <div class="brand">
+                    <div class="brand-badge">QR</div>
+                    <div class="brand-text">
+                        <h1>QRPayHub</h1>
+                        <p class="tagline">Платформа QR-платежей</p>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <a class="btn" href="/merchant-login">Продавцам</a>
+                    <a class="btn" href="/admin/login">Администраторам</a>
+                    <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">☀️</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <h2>Принимайте платежи через QR-коды быстро и безопасно</h2>
+            <p>Современная межбанковская платформа для бизнеса любого размера. Интеграция за 15 минут, без скрытых комиссий.</p>
+            <div class="btns">
+                <a class="btn primary" href="/merchant-register">Начать бесплатно</a>
+                <a class="btn secondary" href="#features">Узнать больше</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Stats Section -->
+    <section class="section">
+        <div class="container">
+            <div class="stats">
+                <div>
+                    <div class="stat-number" id="stat-merchants">50+</div>
+                    <div class="stat-label">Активных продавцов</div>
+                </div>
+                <div>
+                    <div class="stat-number" id="stat-transactions">1,000+</div>
+                    <div class="stat-label">Обработанных платежей</div>
+                </div>
+                <div>
+                    <div class="stat-number" id="stat-volume">10М+</div>
+                    <div class="stat-label">Оборот (KGS)</div>
+                </div>
+                <div>
+                    <div class="stat-number">99.9%</div>
+                    <div class="stat-label">Время работы</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="section" id="features">
+        <div class="container">
+            <div class="section-title">
+                <h3>Все для приема платежей</h3>
+                <p>Полный набор инструментов для эффективного управления платежами</p>
+            </div>
+            <div class="features">
+                <div class="card">
+                    <div class="feature-icon">💳</div>
+                    <h4>QR-платежи</h4>
+                    <p>Создавайте QR-коды для любых сумм, отслеживайте статусы платежей в реальном времени и получайте мгновенные уведомления.</p>
+                </div>
+                <div class="card">
+                    <div class="feature-icon">📊</div>
+                    <h4>Аналитика</h4>
+                    <p>Подробная статистика по продажам, графики динамики, анализ по торговым точкам и автоматические отчеты.</p>
+                </div>
+                <div class="card">
+                    <div class="feature-icon">🔒</div>
+                    <h4>Безопасность</h4>
+                    <p>Двухфакторная аутентификация, HMAC подписи, SSL шифрование и полное соответствие стандартам безопасности.</p>
+                </div>
+                <div class="card">
+                    <div class="feature-icon">🏪</div>
+                    <h4>Торговые точки</h4>
+                    <p>Управляйте несколькими точками продаж, создавайте отдельные QR-коды для каждой и анализируйте эффективность.</p>
+                </div>
+                <div class="card">
+                    <div class="feature-icon">⚡</div>
+                    <h4>API и интеграции</h4>
+                    <p>REST API для интеграции с вашими системами, webhook уведомления и готовые SDK для популярных платформ.</p>
+                </div>
+                <div class="card">
+                    <div class="feature-icon">📱</div>
+                    <h4>Мобильность</h4>
+                    <p>Адаптивный интерфейс для работы с любых устройств, мобильные приложения и офлайн режим.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How it works -->
+    <section class="section" style="background: var(--bg-secondary);">
+        <div class="container">
+            <div class="section-title">
+                <h3>Как это работает</h3>
+                <p>Три простых шага для начала приема платежей</p>
+            </div>
+            <div class="features">
+                <div class="card">
+                    <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
+                        <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--gradient); color: white; display: flex; align-items: center; justify-content: center; font-weight: 800;">1</div>
+                        <h4 style="margin: 0;">Регистрация</h4>
+                    </div>
+                    <p>Создайте аккаунт продавца за 2 минуты. Укажите реквизиты вашего бизнеса и пройдите быструю верификацию.</p>
+                </div>
+                <div class="card">
+                    <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
+                        <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--gradient); color: white; display: flex; align-items: center; justify-content: center; font-weight: 800;">2</div>
+                        <h4 style="margin: 0;">Создание QR</h4>
+                    </div>
+                    <p>Создавайте QR-коды для фиксированных сумм или универсальные коды. Печатайте или показывайте на экране.</p>
+                </div>
+                <div class="card">
+                    <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 16px;">
+                        <div style="width: 40px; height: 40px; border-radius: 50%; background: var(--gradient); color: white; display: flex; align-items: center; justify-content: center; font-weight: 800;">3</div>
+                        <h4 style="margin: 0;">Получение</h4>
+                    </div>
+                    <p>Покупатель сканирует код в банковском приложении. Деньги поступают на ваш счет мгновенно.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div class="container">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
+                <div>
+                    <strong>QRPayHub</strong> — Платформа QR-платежей
+                    <br>
+                    <small>© 2025 Все права защищены</small>
+                </div>
+                <div style="display: flex; gap: 20px;">
+                    <a href="/docs" style="color: var(--text-secondary); text-decoration: none;">Документация</a>
+                    <a href="/support" style="color: var(--text-secondary); text-decoration: none;">Поддержка</a>
+                    <a href="/api" style="color: var(--text-secondary); text-decoration: none;">API</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
+
+

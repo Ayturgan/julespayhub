@@ -1,0 +1,686 @@
+{% extends "merchant/layout.html" %}
+
+{% block title %}Возвраты{% endblock %}
+{% block page_title %}Возвраты{% endblock %}
+{% block page_subtitle %}Управление возвратами средств{% endblock %}
+
+{% block content %}
+<!-- Заголовок с действиями -->
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px;">
+    <div>
+        <h2 class="mb-2">Возвраты</h2>
+        <div class="muted">История и управление возвратами средств</div>
+    </div>
+    
+    <div style="display: flex; gap: 12px; align-items: center;">
+        <button class="btn" onclick="loadRefunds()">🔄 Обновить</button>
+        <button class="btn" onclick="exportRefunds()">📊 Экспорт</button>
+    </div>
+</div>
+
+<!-- Статистика -->
+<div class="grid cols-4 mb-6">
+    <div class="card">
+        <h3 class="mb-3">Всего возвратов</h3>
+        <div style="font-size: 28px; font-weight: bold; color: var(--primary-600); margin: 12px 0;" id="total-refunds">
+            0
+        </div>
+        <div class="text-sm muted">За все время</div>
+    </div>
+    
+    <div class="card">
+        <h3 class="mb-3">Завершенных</h3>
+        <div style="font-size: 28px; font-weight: bold; color: #10b981; margin: 12px 0;" id="completed-refunds">
+            0
+        </div>
+        <div class="text-sm muted">Успешных возвратов</div>
+    </div>
+    
+    <div class="card">
+        <h3 class="mb-3">Общая сумма</h3>
+        <div style="font-size: 28px; font-weight: bold; color: #f59e0b; margin: 12px 0;" id="total-amount">
+            0 KGS
+        </div>
+        <div class="text-sm muted">Возвращенных средств</div>
+    </div>
+    
+    <div class="card">
+        <h3 class="mb-3">Ожидающих</h3>
+        <div style="font-size: 28px; font-weight: bold; color: #dc2626; margin: 12px 0;" id="pending-refunds">
+            0
+        </div>
+        <div class="text-sm muted">В обработке</div>
+    </div>
+</div>
+
+<!-- Фильтры -->
+<div class="card" style="margin-bottom: 32px;">
+    <div style="display: flex; gap: 20px; align-items: end; flex-wrap: wrap;">
+        <div class="form-group" style="margin-bottom: 0;">
+            <label>Статус</label>
+                                     <select id="status-filter" onchange="applyFilters()">
+                <option value="">Все статусы</option>
+                <option value="pending">Ожидание</option>
+                <option value="processing">В процессе</option>
+                <option value="preparing">Подготовка</option>
+                <option value="completed">Завершенные</option>
+                <option value="failed">Ошибки</option>
+                <option value="aborted">Отмененные</option>
+            </select>
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 0;">
+            <label>Тип возврата</label>
+                         <select id="type-filter" onchange="applyFilters()">
+                 <option value="">Все типы</option>
+                 <option value="full">Полные</option>
+                 <option value="partial">Частичные</option>
+             </select>
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 0;">
+            <label>Поиск</label>
+            <input type="search" id="search-input" placeholder="По ID или причине..." onkeyup="applyFilters()" style="width: 250px;">
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 0;">
+            <label>Дата от</label>
+            <input type="date" id="date-from" onchange="applyFilters()">
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 0;">
+            <label>Дата до</label>
+            <input type="date" id="date-to" onchange="applyFilters()">
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 0;">
+            <label>Сумма от</label>
+            <input type="number" id="amount-from" placeholder="0" onchange="applyFilters()" style="width: 120px;">
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 0;">
+            <label>Сумма до</label>
+            <input type="number" id="amount-to" placeholder="∞" onchange="applyFilters()" style="width: 120px;">
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 0;">
+            <label>Сортировка</label>
+            <select id="sort-filter" onchange="applyFilters()">
+                <option value="created_desc">Сначала новые</option>
+                <option value="created_asc">Сначала старые</option>
+                <option value="amount_desc">По сумме (большие)</option>
+                <option value="amount_asc">По сумме (малые)</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<!-- Загрузка -->
+<div id="refunds-loading" class="loading" style="padding: 60px; text-align: center; font-size: 16px;">Загрузка возвратов...</div>
+
+<!-- Таблица возвратов -->
+<div id="refunds-content" style="display: none;">
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Платеж</th>
+                    <th>Сумма</th>
+                    <th>Тип</th>
+                    <th>Статус</th>
+                    <th>Причина</th>
+                    <th>Дата создания</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody id="refunds-table">
+                <!-- Данные будут загружены -->
+            </tbody>
+        </table>
+    </div>
+</div>
+    
+<!-- Пагинация -->
+<div id="pagination-container" style="display: flex; justify-content: center; margin-top: 32px; margin-bottom: 16px;">
+    <div style="display: flex; gap: 8px;" id="pagination-buttons">
+        <!-- Кнопки пагинации будут добавлены динамически -->
+    </div>
+</div>
+
+<!-- Модальное окно деталей возврата -->
+<div id="refund-details-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: var(--bg-secondary); padding: 24px; border-radius: 12px; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">Детали возврата</h3>
+            <button onclick="hideRefundDetailsModal()" style="background: none; border: none; font-size: 20px; cursor: pointer;">✕</button>
+        </div>
+        
+        <div id="refund-details">
+            <!-- Детали возврата будут загружены -->
+        </div>
+    </div>
+</div>
+
+<script>
+let currentPage = 1;
+let pageSize = 20;
+let allRefunds = [];
+let filteredRefunds = [];
+let currentRefund = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadRefunds();
+    loadRefundStats();
+    
+    // Автообновление каждые 30 секунд
+    setInterval(() => {
+        loadRefundStats();
+    }, 30000);
+});
+
+async function loadRefunds() {
+    try {
+        const token = requireMerchantAuth();
+        if (!token) return;
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/merchant/refunds?limit=1000'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка загрузки возвратов');
+        }
+        
+        const responseData = await response.json();
+        allRefunds = responseData.refunds || [];
+        filteredRefunds = [...allRefunds];
+        
+        displayRefunds();
+        updatePagination();
+        
+        document.getElementById('refunds-loading').style.display = 'none';
+        document.getElementById('refunds-content').style.display = 'block';
+        
+    } catch (error) {
+        console.error('Ошибка загрузки возвратов:', error);
+        showAlert('Ошибка загрузки возвратов: ' + error.message, 'error');
+    }
+}
+
+async function loadRefundStats() {
+    try {
+        const token = requireMerchantAuth();
+        if (!token) return;
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/merchant/refunds/summary'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (response.ok) {
+            const stats = await response.json();
+            console.log('Статистика возвратов:', stats);
+            updateRefundStats(stats);
+        } else {
+            const errorData = await response.json();
+            console.error('Ошибка загрузки статистики возвратов:', errorData.detail || errorData.message);
+        }
+        
+    } catch (error) {
+        console.error('Ошибка загрузки статистики возвратов:', error);
+    }
+}
+
+function updateRefundStats(stats) {
+    document.getElementById('total-refunds').textContent = stats.total_refunds || 0;
+    document.getElementById('completed-refunds').textContent = stats.completed_refunds || 0;
+    document.getElementById('total-amount').textContent = formatAmount(stats.total_amount || 0);
+    document.getElementById('pending-refunds').textContent = stats.pending_refunds || 0;
+}
+
+function displayRefunds() {
+    const tbody = document.getElementById('refunds-table');
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const refunds = filteredRefunds.slice(startIndex, endIndex);
+    
+    if (refunds.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center muted">Нет возвратов</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = refunds.map(refund => `
+        <tr>
+            <td style="font-family: monospace; font-size: 12px;">
+                <strong>${refund.id}</strong>
+            </td>
+            <td>
+                <a href="#" onclick="viewPaymentDetails(${refund.original_payment_id})" style="color: var(--primary-600); text-decoration: none;">
+                    ${refund.original_payment_id}
+                </a>
+            </td>
+            <td>
+                <strong>${formatAmount(refund.amount)}</strong>
+            </td>
+            <td>
+                <span class="badge ${(refund.refund_type === 'FULL' || refund.refund_type === 'full') ? 'primary' : 'info'}">${(refund.refund_type === 'FULL' || refund.refund_type === 'full') ? 'Полный' : 'Частичный'}</span>
+            </td>
+            <td>
+                <span class="badge ${getRefundStatusBadgeClass(refund.status)}">${getRefundStatusText(refund.status)}</span>
+            </td>
+            <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${refund.reason}">
+                ${refund.reason}
+            </td>
+            <td>${formatDateTime(refund.created_at)}</td>
+            <td>
+                <div class="table-actions">
+                    <button class="btn-table primary" onclick="viewRefundDetails(${refund.id})" title="Детали">👁️</button>
+                    ${(refund.status === 'PENDING' || refund.status === 'pending') ? `<button class="btn-table warn" onclick="executeRefund(${refund.id})" title="Выполнить">▶️</button>` : ''}
+                    ${(refund.status === 'PROCESSING' || refund.status === 'processing') ? `<span class="badge info" style="font-size: 12px;">Автоматическое завершение</span>` : ''}
+                    ${(refund.status === 'PENDING' || refund.status === 'pending') ? `<button class="btn-table danger" onclick="cancelRefund(${refund.id})" title="Отменить">⏹️</button>` : ''}
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function updatePagination() {
+    const totalPages = Math.ceil(filteredRefunds.length / pageSize);
+    const buttonsContainer = document.getElementById('pagination-buttons');
+    buttonsContainer.innerHTML = '';
+    
+    if (totalPages > 1) {
+        if (currentPage > 1) {
+            buttonsContainer.innerHTML += `<button class="btn" onclick="changePage(${currentPage - 1})">← Предыдущая</button>`;
+        }
+        
+        for (let i = Math.max(1, currentPage - 2); i <= Math.min(totalPages, currentPage + 2); i++) {
+            const isActive = i === currentPage ? 'primary' : '';
+            buttonsContainer.innerHTML += `<button class="btn ${isActive}" onclick="changePage(${i})">${i}</button>`;
+        }
+        
+        if (currentPage < totalPages) {
+            buttonsContainer.innerHTML += `<button class="btn" onclick="changePage(${currentPage + 1})">Следующая →</button>`;
+        }
+    }
+}
+
+function changePage(page) {
+    currentPage = page;
+    displayRefunds();
+    updatePagination();
+}
+
+function applyFilters() {
+    const statusFilter = document.getElementById('status-filter').value;
+    const typeFilter = document.getElementById('type-filter').value;
+    const searchTerm = document.getElementById('search-input').value.toLowerCase();
+    const dateFrom = document.getElementById('date-from').value;
+    const dateTo = document.getElementById('date-to').value;
+    const amountFrom = parseFloat(document.getElementById('amount-from').value) || 0;
+    const amountTo = parseFloat(document.getElementById('amount-to').value) || Infinity;
+    const sortFilter = document.getElementById('sort-filter').value;
+    
+    filteredRefunds = allRefunds.filter(refund => {
+        const matchesStatus = !statusFilter || refund.status === statusFilter;
+        const matchesType = !typeFilter || refund.refund_type === typeFilter;
+        const matchesSearch = !searchTerm || 
+            refund.id.toString().includes(searchTerm) ||
+            refund.reason.toLowerCase().includes(searchTerm);
+        
+        const refundDate = new Date(refund.created_at).toISOString().split('T')[0];
+        const matchesDateFrom = !dateFrom || refundDate >= dateFrom;
+        const matchesDateTo = !dateTo || refundDate <= dateTo;
+        
+        const matchesAmount = refund.amount >= amountFrom && refund.amount <= amountTo;
+        
+        return matchesStatus && matchesType && matchesSearch && matchesDateFrom && matchesDateTo && matchesAmount;
+    });
+    
+    // Сортировка
+    filteredRefunds.sort((a, b) => {
+        switch (sortFilter) {
+            case 'created_desc':
+                return new Date(b.created_at) - new Date(a.created_at);
+            case 'created_asc':
+                return new Date(a.created_at) - new Date(b.created_at);
+            case 'amount_desc':
+                return b.amount - a.amount;
+            case 'amount_asc':
+                return a.amount - b.amount;
+            default:
+                return 0;
+        }
+    });
+    
+    currentPage = 1;
+    displayRefunds();
+    updatePagination();
+}
+
+async function viewRefundDetails(refundId) {
+    try {
+        const token = requireMerchantAuth();
+        if (!token) return;
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/merchant/refunds/${refundId}`), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка загрузки деталей возврата');
+        }
+        
+        const refund = await response.json();
+        currentRefund = refund;
+        
+        showRefundDetailsModal(refund);
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        showAlert('Ошибка загрузки деталей возврата: ' + error.message, 'error');
+    }
+}
+
+function showRefundDetailsModal(refund) {
+    const modal = document.getElementById('refund-details-modal');
+    const detailsContainer = document.getElementById('refund-details');
+    
+    detailsContainer.innerHTML = `
+        <div class="grid cols-2" style="gap: 16px; margin-bottom: 20px;">
+            <div>
+                <h4>Основная информация</h4>
+                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px;">
+                    <div style="margin-bottom: 8px;"><strong>ID возврата:</strong> ${refund.id}</div>
+                    <div style="margin-bottom: 8px;"><strong>ID платежа:</strong> <a href="#" onclick="viewPaymentDetails(${refund.original_payment_id})" style="color: var(--primary-600);">${refund.original_payment_id}</a></div>
+                    <div style="margin-bottom: 8px;"><strong>Сумма:</strong> ${formatAmount(refund.amount)}</div>
+                    <div style="margin-bottom: 8px;"><strong>Тип:</strong> <span class="badge ${(refund.refund_type === 'FULL' || refund.refund_type === 'full') ? 'primary' : 'info'}">${(refund.refund_type === 'FULL' || refund.refund_type === 'full') ? 'Полный' : 'Частичный'}</span></div>
+                    <div style="margin-bottom: 8px;"><strong>Статус:</strong> <span class="badge ${getRefundStatusBadgeClass(refund.status)}">${getRefundStatusText(refund.status)}</span></div>
+                    <div><strong>Создан:</strong> ${formatDateTime(refund.created_at)}</div>
+                </div>
+            </div>
+            <div>
+                <h4>Детали</h4>
+                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px;">
+                    <div style="margin-bottom: 8px;"><strong>Причина:</strong></div>
+                    <div style="margin-bottom: 8px; padding: 8px; background: var(--bg-secondary); border-radius: 4px;">${refund.reason}</div>
+                    <div style="margin-bottom: 8px;"><strong>Завершен:</strong> ${refund.completed_at ? formatDateTime(refund.completed_at) : 'N/A'}</div>
+                    <div style="margin-bottom: 8px;"><strong>Токен:</strong> <span style="font-family: monospace; font-size: 12px;">${refund.refund_token || 'N/A'}</span></div>
+                    <div><strong>Ошибка:</strong> ${refund.error_message || 'N/A'}</div>
+                </div>
+            </div>
+        </div>
+        
+        ${refund.error_message ? `
+        <div style="margin-bottom: 20px;">
+            <h4>Ошибка</h4>
+            <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px; color: #dc2626;">
+                ${refund.error_message}
+            </div>
+        </div>
+        ` : ''}
+        
+        <div style="display: flex; gap: 12px; justify-content: flex-end;">
+            <button class="btn" onclick="hideRefundDetailsModal()">Закрыть</button>
+             ${(refund.status === 'PENDING' || refund.status === 'pending') ? `<button class="btn warn" onclick="executeRefund(${refund.id})">Выполнить возврат</button>` : ''}
+             ${(refund.status === 'PENDING' || refund.status === 'pending') ? `<button class="btn danger" onclick="cancelRefund(${refund.id})">Отменить возврат</button>` : ''}
+        </div>
+    `;
+    
+    modal.style.display = 'flex';
+}
+
+function hideRefundDetailsModal() {
+    document.getElementById('refund-details-modal').style.display = 'none';
+    currentRefund = null;
+}
+
+async function executeRefund(refundId) {
+    if (!confirm('Выполнить возврат? Это действие создаст запросы в банках и откроет страницы для подтверждения.')) return;
+    
+    try {
+        const token = requireMerchantAuth();
+        if (!token) return;
+        
+        // Отправляем запрос на создание запросов в банках
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/merchant/refunds/${refundId}/execute`), {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка создания запросов возврата');
+        }
+        
+        const result = await response.json();
+        
+        // Открываем только страницу банка отправителя
+        const senderBankUrl = '/simulation/sender-bank';
+        
+        // Открываем вкладку банка отправителя
+        const senderWindow = window.open(senderBankUrl, '_blank');
+        
+        // Проверяем, что вкладка открылась
+        if (!senderWindow) {
+            showAlert('Внимание: Вкладка была заблокирована браузером. Откройте вручную: ' + senderBankUrl, 'warning');
+        }
+        
+        showAlert('Запросы возврата созданы в банках! Открыта страница банка отправителя. Нажмите "Банк Получателя" в навигации для открытия второй страницы. Подтвердите запросы в обоих банках - возврат будет автоматически завершен.', 'success');
+        
+        // Обновляем статус кнопки
+        const executeButton = document.querySelector(`button[onclick="executeRefund(${refundId})"]`);
+        if (executeButton) {
+            executeButton.disabled = true;
+            executeButton.innerHTML = '<i class="fas fa-clock"></i> Ожидание подтверждения';
+            executeButton.className = 'btn btn-info btn-sm';
+        }
+        
+        // Начинаем мониторинг статуса возврата для автоматического обновления
+        startRefundStatusMonitoring(refundId);
+        
+        // Обновляем список возвратов
+        loadRefunds();
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        showAlert('Ошибка создания запросов возврата: ' + error.message, 'error');
+    }
+}
+
+
+
+// Функция мониторинга статуса возврата
+async function startRefundStatusMonitoring(refundId) {
+    const checkInterval = setInterval(async () => {
+        try {
+            const token = requireMerchantAuth();
+            if (!token) return;
+            
+            const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/merchant/refunds/${refundId}`), {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            
+            if (response.ok) {
+                const refund = await response.json();
+                
+                if (refund.status === 'completed' || refund.status === 'failed') {
+                    clearInterval(checkInterval);
+                    
+                    // Обновляем кнопку
+                    const executeButton = document.querySelector(`button[onclick="executeRefund(${refundId})"]`);
+                    if (executeButton) {
+                        if (refund.status === 'completed') {
+                            executeButton.innerHTML = '<i class="fas fa-check"></i> Завершен';
+                            executeButton.className = 'btn btn-success btn-sm';
+                        } else {
+                            executeButton.innerHTML = '<i class="fas fa-times"></i> Ошибка';
+                            executeButton.className = 'btn btn-danger btn-sm';
+                        }
+                    }
+                    
+                    // Обновляем список возвратов
+                    loadRefunds();
+                    
+                    showAlert(
+                        refund.status === 'completed' 
+                            ? 'Возврат успешно завершен!' 
+                            : 'Возврат завершен с ошибкой',
+                        refund.status === 'completed' ? 'success' : 'error'
+                    );
+                }
+            }
+        } catch (error) {
+            console.error('Ошибка мониторинга статуса возврата:', error);
+        }
+    }, 3000); // Проверяем каждые 3 секунды
+}
+
+async function cancelRefund(refundId) {
+    if (!confirm('Отменить возврат? Это действие нельзя отменить.')) return;
+    
+    try {
+        const token = requireMerchantAuth();
+        if (!token) return;
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/merchant/refunds/${refundId}/cancel`), {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка отмены возврата');
+        }
+        
+        const result = await response.json();
+        showAlert(result.message || 'Возврат отменен', 'success');
+        hideRefundDetailsModal();
+        loadRefunds();
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        showAlert('Ошибка отмены возврата: ' + error.message, 'error');
+    }
+}
+
+async function exportRefunds() {
+    try {
+        const token = requireMerchantAuth();
+        if (!token) return;
+        
+        // Собираем параметры фильтров
+        const params = new URLSearchParams();
+        const statusFilter = document.getElementById('status-filter').value;
+        const typeFilter = document.getElementById('type-filter').value;
+        const dateFrom = document.getElementById('date-from').value;
+        const dateTo = document.getElementById('date-to').value;
+        const amountFrom = document.getElementById('amount-from').value;
+        const amountTo = document.getElementById('amount-to').value;
+        
+        if (statusFilter) params.append('status', statusFilter);
+        if (typeFilter) params.append('refund_type', typeFilter);
+        if (dateFrom) params.append('date_from', dateFrom);
+        if (dateTo) params.append('date_to', dateTo);
+        if (amountFrom) params.append('min_amount', amountFrom);
+        if (amountTo) params.append('max_amount', amountTo);
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/merchant/refunds/export?${params.toString()}`), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка экспорта');
+        }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `refunds_export_${new Date().toISOString().split('T')[0]}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        showAlert('Экспорт завершен', 'success');
+        
+    } catch (error) {
+        console.error('Ошибка экспорта:', error);
+        showAlert('Ошибка экспорта: ' + error.message, 'error');
+    }
+}
+
+// Вспомогательные функции
+function getRefundStatusBadgeClass(status) {
+    const classes = {
+        'PENDING': 'warn',
+        'PROCESSING': 'info',
+        'PREPARING': 'warn',
+        'COMPLETED': 'ok',
+        'FAILED': 'err',
+        'ABORTED': 'err',
+        'pending': 'warn',
+        'processing': 'info',
+        'preparing': 'warn',
+        'completed': 'ok',
+        'failed': 'err',
+        'aborted': 'err'
+    };
+    return classes[status] || 'info';
+}
+
+function getRefundStatusText(status) {
+    const texts = {
+        'PENDING': 'Ожидание',
+        'PROCESSING': 'В процессе',
+        'PREPARING': 'Подготовка',
+        'COMPLETED': 'Завершен',
+        'FAILED': 'Ошибка',
+        'ABORTED': 'Отменен',
+        'pending': 'Ожидание',
+        'processing': 'В процессе',
+        'preparing': 'Подготовка',
+        'completed': 'Завершен',
+        'failed': 'Ошибка',
+        'aborted': 'Отменен'
+    };
+    return texts[status] || status;
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleString('ru-RU');
+}
+
+function formatAmount(amount) {
+    return new Intl.NumberFormat('ru-RU', {
+        style: 'currency',
+        currency: 'KGS',
+        minimumFractionDigits: 2
+    }).format(amount);
+}
+
+function viewPaymentDetails(paymentId) {
+    // Переход на страницу платежей с открытием деталей
+    window.location.href = `/merchant/payments?payment_id=${paymentId}`;
+}
+
+function showMessage(message, type) {
+    showAlert(message, type);
+}
+
+function showError(message) {
+    showAlert(message, 'error');
+}
+</script>
+{% endblock %}

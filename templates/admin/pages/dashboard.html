@@ -1,0 +1,742 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Дашборд{% endblock %}
+{% block page_title %}Обзор системы{% endblock %}
+
+{% block content %}
+<div id="dashboard-loading" class="loading">Загрузка данных дашборда...</div>
+<div id="dashboard-content" style="display: none;">
+
+    <!-- Основная статистика -->
+    <div class="grid cols-4 mb-6">
+        <div class="card">
+            <h3>💳 Всего транзакций</h3>
+            <div style="font-size: 28px; font-weight: bold; color: var(--primary-600); margin: 12px 0;" id="total-transactions">
+                0
+                </div>
+            <div class="text-sm muted" id="transactions-change">За все время</div>
+            </div>
+        
+        <div class="card">
+            <h3>🏦 Активных банков</h3>
+            <div style="font-size: 28px; font-weight: bold; color: var(--primary-600); margin: 12px 0;" id="active-banks">
+                0
+        </div>
+            <div class="text-sm muted" id="banks-status">из <span id="total-banks">0</span> банков</div>
+    </div>
+    
+        <div class="card">
+            <h3>🏪 Продавцов</h3>
+            <div style="font-size: 28px; font-weight: bold; color: var(--primary-600); margin: 12px 0;" id="total-merchants">
+                0
+            </div>
+            <div class="text-sm muted">Зарегистрировано</div>
+                </div>
+        
+        <div class="card">
+            <h3>💰 Объем сегодня</h3>
+            <div style="font-size: 28px; font-weight: bold; color: var(--text-primary); margin: 12px 0;" id="today-volume">
+                0 KGS
+            </div>
+            <div class="text-sm muted" id="volume-change">За последние 24ч</div>
+        </div>
+    </div>
+    
+
+
+    <!-- Последние транзакции -->
+    <div class="card mb-6">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2>💳 Последние транзакции</h2>
+            <div>
+                <button class="btn primary" onclick="loadRecentTransactions()">🔄 Обновить</button>
+                <button class="btn" onclick="window.location.href='/admin/transactions'">👁️ Все транзакции</button>
+        </div>
+    </div>
+    
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Сумма</th>
+                        <th>Статус</th>
+                        <th>Банк отправителя</th>
+                        <th>Банк получателя</th>
+                        <th>Время создания</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody id="recent-transactions">
+                    <tr>
+                        <td colspan="7" class="loading">Загрузка транзакций...</td>
+                    </tr>
+                </tbody>
+            </table>
+            </div>
+        </div>
+
+    <!-- Графики -->
+    <div class="grid cols-2 mb-6">
+        <div class="card">
+            <h3>📈 Динамика оборота за 7 дней</h3>
+            <div style="height: 300px; position: relative;">
+                <canvas id="turnover-chart"></canvas>
+                <div id="turnover-loading" class="loading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">Загрузка графика...</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3>🥧 Соотношение статусов транзакций за 24 часа</h3>
+            <div style="height: 300px; position: relative;">
+                <canvas id="status-chart"></canvas>
+                <div id="status-loading" class="loading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">Загрузка графика...</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="grid cols-2 mb-6">
+        <div class="card">
+            <h3>⏱️ Время жизни транзакции (от создания до завершения)</h3>
+            <div style="height: 300px; position: relative;">
+                <canvas id="transaction-time-chart"></canvas>
+                <div id="transaction-time-loading" class="loading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">Загрузка графика...</div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3>💰 Динамика среднего чека</h3>
+            <div style="height: 300px; position: relative;">
+                <canvas id="average-check-chart"></canvas>
+                <div id="average-check-loading" class="loading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">Загрузка графика...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно для деталей платежа -->
+    <div id="payment-details-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="margin: 0;">Детали платежа</h3>
+                <button class="modal-close" onclick="closePaymentDetails()">&times;</button>
+            </div>
+            <div class="modal-body" id="payment-details-content">
+                <!-- Детали платежа будут загружены -->
+            </div>
+        </div>
+    </div>
+
+    <style>
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0,0,0,0.5);
+    }
+    
+    .modal-content {
+        background-color: var(--bg-primary);
+        margin: 5% auto;
+        padding: 0;
+        border: 1px solid var(--border-color);
+        width: 80%;
+        max-width: 600px;
+        border-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    }
+    
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px;
+        border-bottom: 1px solid var(--border-color);
+        background-color: var(--bg-secondary);
+        border-radius: 8px 8px 0 0;
+    }
+    
+    .modal-close {
+        color: var(--text-secondary);
+        font-size: 28px;
+        font-weight: bold;
+        background: none;
+        border: none;
+        cursor: pointer;
+    }
+    
+    .modal-close:hover {
+        color: var(--text-primary);
+    }
+    
+    .modal-body {
+        padding: 20px;
+        background-color: var(--bg-primary);
+    }
+    
+    .payment-details {
+        display: grid;
+        gap: 12px;
+    }
+    
+    .detail-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    .detail-row:last-child {
+        border-bottom: none;
+    }
+    
+    .detail-row strong {
+        color: var(--text-primary);
+        min-width: 120px;
+    }
+    </style>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Регистрируем плагин annotation для Chart.js
+if (typeof Chart !== 'undefined' && typeof ChartAnnotation !== 'undefined') {
+    Chart.register(ChartAnnotation);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadDashboardData();
+    
+    // Автообновление каждые 30 секунд
+    setInterval(loadDashboardData, 30000);
+});
+
+async function loadDashboardData() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        if (!token) {
+            window.location.href = '/admin/login';
+            return;
+        }
+
+        // Загружаем статистику
+        await Promise.all([
+            loadStatistics(),
+            loadCharts(),
+            loadRecentTransactions()
+        ]);
+
+        document.getElementById('dashboard-loading').style.display = 'none';
+        document.getElementById('dashboard-content').style.display = 'block';
+        
+    } catch (error) {
+        console.error('Ошибка загрузки дашборда:', error);
+        showError('Ошибка загрузки данных дашборда: ' + error.message);
+    }
+}
+
+async function loadStatistics() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/statistics?metric=dashboard'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки статистики');
+        }
+        
+        const stats = await response.json();
+        
+        document.getElementById('total-transactions').textContent = stats.total_payments || 0;
+        document.getElementById('active-banks').textContent = stats.active_banks || 0;
+        document.getElementById('total-banks').textContent = stats.total_banks || 0;
+        document.getElementById('total-merchants').textContent = stats.total_merchants || 0;
+        document.getElementById('today-volume').textContent = `${stats.today_total_amount || 0} KGS`;
+        
+    } catch (error) {
+        console.error('Ошибка загрузки статистики:', error);
+        // Показываем заглушки при ошибке
+        document.getElementById('total-transactions').textContent = 'N/A';
+        document.getElementById('active-banks').textContent = 'N/A';
+        document.getElementById('total-banks').textContent = 'N/A';
+        document.getElementById('total-merchants').textContent = 'N/A';
+        document.getElementById('today-volume').textContent = 'N/A';
+    }
+}
+
+async function loadCharts() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        
+        // Загружаем данные для всех графиков
+        await Promise.all([
+            loadTurnoverChart(token),
+            loadStatusChart(token),
+            loadTransactionTimeChart(token),
+            loadAverageCheckChart(token)
+        ]);
+        
+    } catch (error) {
+        console.error('Ошибка загрузки графиков:', error);
+    }
+}
+
+async function loadTurnoverChart(token) {
+    try {
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/statistics?metric=turnover_7days'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки данных оборота');
+        }
+        
+        const data = await response.json();
+        const turnoverData = data.turnover || [];
+        
+        // Создаем график оборота
+        const ctx = document.getElementById('turnover-chart');
+        const loadingEl = document.getElementById('turnover-loading');
+        
+        if (ctx) {
+            // Скрываем индикатор загрузки
+            if (loadingEl) loadingEl.style.display = 'none';
+            
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: turnoverData.map(item => item.date),
+                    datasets: [{
+                        label: 'Оборот (KGS)',
+                        data: turnoverData.map(item => item.amount),
+                        backgroundColor: 'rgba(34, 197, 94, 0.8)',
+                        borderColor: 'rgba(34, 197, 94, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toLocaleString() + ' KGS';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+    } catch (error) {
+        console.error('Ошибка загрузки графика оборота:', error);
+        const loadingEl = document.getElementById('turnover-loading');
+        if (loadingEl) {
+            loadingEl.textContent = 'Ошибка загрузки графика';
+            loadingEl.style.color = '#dc2626';
+        }
+    }
+}
+
+async function loadStatusChart(token) {
+    try {
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/statistics?metric=status_distribution'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки данных статусов');
+        }
+        
+        const data = await response.json();
+        const statusData = data.status_distribution || [];
+        
+        // Создаем круговую диаграмму
+        const ctx = document.getElementById('status-chart');
+        const loadingEl = document.getElementById('status-loading');
+        
+        if (ctx) {
+            // Скрываем индикатор загрузки
+            if (loadingEl) loadingEl.style.display = 'none';
+            
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: statusData.map(item => item.status),
+                    datasets: [{
+                        data: statusData.map(item => item.count),
+                        backgroundColor: [
+                            'rgba(34, 197, 94, 0.8)',   // Зеленый - завершен
+                            'rgba(239, 68, 68, 0.8)',   // Красный - ошибка
+                            'rgba(245, 158, 11, 0.8)'   // Оранжевый - в процессе
+                        ],
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+        
+    } catch (error) {
+        console.error('Ошибка загрузки графика статусов:', error);
+        const loadingEl = document.getElementById('status-loading');
+        if (loadingEl) {
+            loadingEl.textContent = 'Ошибка загрузки графика';
+            loadingEl.style.color = '#dc2626';
+        }
+    }
+}
+
+async function loadTransactionTimeChart(token) {
+    try {
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/statistics?metric=transaction_lifetime_series'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки данных времени транзакций');
+        }
+        
+        const data = await response.json();
+        const lifetimeData = data.transaction_lifetime_series || [];
+        
+        // Создаем линейный график
+        const ctx = document.getElementById('transaction-time-chart');
+        const loadingEl = document.getElementById('transaction-time-loading');
+        
+        if (ctx) {
+            // Скрываем индикатор загрузки
+            if (loadingEl) loadingEl.style.display = 'none';
+            
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: lifetimeData.map(item => {
+                        // Конвертируем timestamp в локальное время в формате "ЧЧ:00"
+                        const date = new Date(item.timestamp.replace('+00:00Z', 'Z'));
+                        if (isNaN(date.getTime())) {
+                            // Если не удалось распарсить, используем fallback
+                            return item.timestamp.substring(11, 16); // Берем ЧЧ:ММ из строки
+                        }
+                        return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+                    }),
+                    datasets: [{
+                        label: 'Среднее время обработки (сек)',
+                        data: lifetimeData.map(item => item.avg_lifetime_seconds),
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                afterBody: function(context) {
+                                    const dataIndex = context[0].dataIndex;
+                                    const item = lifetimeData[dataIndex];
+                                    const date = new Date(item.timestamp.replace('+00:00Z', 'Z'));
+                                    const timeStr = isNaN(date.getTime()) ? 
+                                        item.timestamp.substring(11, 16) : 
+                                        date.toLocaleString('ru-RU');
+                                    return [
+                                        `Количество транзакций: ${item.transaction_count}`,
+                                        `Время: ${timeStr}`
+                                    ];
+                                }
+                            }
+                        },
+                        annotation: {
+                            annotations: {
+                                thresholdLine: {
+                                    type: 'line',
+                                    yMin: 10,
+                                    yMax: 10,
+                                    borderColor: 'rgba(239, 68, 68, 0.8)',
+                                    borderWidth: 2,
+                                    borderDash: [5, 5],
+                                    label: {
+                                        content: 'Критический порог (10 сек)',
+                                        enabled: true,
+                                        position: 'end'
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Время'
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Среднее время, сек.'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+    } catch (error) {
+        console.error('Ошибка загрузки графика времени транзакций:', error);
+        const loadingEl = document.getElementById('transaction-time-loading');
+        if (loadingEl) {
+            loadingEl.textContent = 'Ошибка загрузки графика';
+            loadingEl.style.color = '#dc2626';
+        }
+    }
+}
+
+async function loadAverageCheckChart(token) {
+    try {
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/statistics?metric=average_check'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки данных среднего чека');
+        }
+        
+        const data = await response.json();
+        const checkData = data.average_check || [];
+        
+        // Создаем линейный график
+        const ctx = document.getElementById('average-check-chart');
+        const loadingEl = document.getElementById('average-check-loading');
+        
+        if (ctx) {
+            // Скрываем индикатор загрузки
+            if (loadingEl) loadingEl.style.display = 'none';
+            
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: checkData.map(item => item.date),
+                    datasets: [{
+                        label: 'Средний чек (KGS)',
+                        data: checkData.map(item => item.avg_amount),
+                        borderColor: 'rgba(168, 85, 247, 1)',
+                        backgroundColor: 'rgba(168, 85, 247, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return value.toLocaleString() + ' KGS';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+    } catch (error) {
+        console.error('Ошибка загрузки графика среднего чека:', error);
+        const loadingEl = document.getElementById('average-check-loading');
+        if (loadingEl) {
+            loadingEl.textContent = 'Ошибка загрузки графика';
+            loadingEl.style.color = '#dc2626';
+        }
+    }
+}
+
+async function loadRecentTransactions() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/transactions?limit=10'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки транзакций');
+        }
+        
+        const data = await response.json();
+        const transactions = Array.isArray(data) ? data : (data.transactions || []);
+        const container = document.getElementById('recent-transactions');
+        
+        if (transactions.length === 0) {
+            container.innerHTML = '<tr><td colspan="7" class="text-center muted">Нет транзакций</td></tr>';
+            return;
+        }
+        
+        container.innerHTML = transactions.map(tx => `
+            <tr>
+                <td>${tx.id}</td>
+                <td>${tx.amount} ${tx.currency}</td>
+                <td><span class="badge ${getStatusBadgeClass(tx.status)}">${getStatusText(tx.status)}</span></td>
+                <td>${tx.sender_bank_code || 'N/A'}</td>
+                <td>${tx.receiver_bank_code || 'N/A'}</td>
+                <td>${formatDateTime(tx.created_at)}</td>
+                <td>
+                    <button class="btn-table secondary" onclick="viewPaymentDetails('${tx.id}')" title="Детали">👁️</button>
+                </td>
+            </tr>
+        `).join('');
+        
+    } catch (error) {
+        console.error('Ошибка загрузки транзакций:', error);
+        document.getElementById('recent-transactions').innerHTML = '<tr><td colspan="7" class="text-center muted">Ошибка загрузки транзакций</td></tr>';
+    }
+}
+
+
+
+// Утилиты
+function getBadgeClass(severity) {
+    const classes = {
+        'critical': 'err',
+        'error': 'err',
+        'warning': 'warn',
+        'info': 'info',
+        'success': 'ok'
+    };
+    return classes[severity] || 'info';
+}
+
+function getStatusBadgeClass(status) {
+    const classes = {
+        'pending': 'info',
+        'preparing': 'warn',
+        'prepared': 'info',
+        'committing': 'warn',
+        'completed': 'ok',
+        'aborting': 'err',
+        'aborted': 'err'
+    };
+    return classes[status] || 'info';
+}
+
+function getStatusText(status) {
+    const texts = {
+        'pending': 'Ожидание',
+        'preparing': 'Подготовка',
+        'prepared': 'Подготовлен',
+        'committing': 'Выполнение',
+        'completed': 'Завершен',
+        'aborting': 'Отмена',
+        'aborted': 'Отменен'
+    };
+    return texts[status] || status;
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleString('ru-RU');
+}
+
+function calculateUptime() {
+    // Простая заглушка
+    return '2ч 15мин';
+}
+
+
+
+async function viewPaymentDetails(paymentId) {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/payments/${paymentId}`), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки деталей платежа');
+        }
+        
+        const payment = await response.json();
+        
+        const content = `
+            <div class="payment-details">
+                <div class="detail-row">
+                    <strong>ID:</strong> ${payment.id}
+                </div>
+                <div class="detail-row">
+                    <strong>Сумма:</strong> ${payment.amount} ${payment.currency}
+                </div>
+                <div class="detail-row">
+                    <strong>Статус:</strong> <span class="badge ${getStatusBadgeClass(payment.status)}">${getStatusText(payment.status)}</span>
+                </div>
+                <div class="detail-row">
+                    <strong>Получатель:</strong> ${payment.receiver_name}
+                </div>
+                <div class="detail-row">
+                    <strong>Счет получателя:</strong> ${payment.receiver_account}
+                </div>
+                <div class="detail-row">
+                    <strong>Банк получателя:</strong> ${payment.receiver_bank_code}
+                </div>
+                <div class="detail-row">
+                    <strong>Описание:</strong> ${payment.description}
+                </div>
+                <div class="detail-row">
+                    <strong>Создан:</strong> ${formatDateTime(payment.created_at)}
+                </div>
+                ${payment.paid_at ? `<div class="detail-row"><strong>Оплачен:</strong> ${formatDateTime(payment.paid_at)}</div>` : ''}
+                ${payment.transaction_id ? `<div class="detail-row"><strong>ID транзакции:</strong> ${payment.transaction_id}</div>` : ''}
+                ${payment.payer_phone ? `<div class="detail-row"><strong>Телефон плательщика:</strong> ${payment.payer_phone}</div>` : ''}
+            </div>
+        `;
+        
+        document.getElementById('payment-details-content').innerHTML = content;
+        document.getElementById('payment-details-modal').style.display = 'block';
+        
+    } catch (error) {
+        console.error('Ошибка загрузки деталей платежа:', error);
+        showError('Ошибка загрузки деталей платежа: ' + error.message);
+    }
+}
+
+function closePaymentDetails() {
+    document.getElementById('payment-details-modal').style.display = 'none';
+}
+
+function showError(message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error';
+    errorDiv.textContent = message;
+    document.querySelector('.content-area').insertBefore(errorDiv, document.querySelector('.content-area').firstChild);
+    
+    setTimeout(() => {
+        errorDiv.remove();
+    }, 5000);
+}
+</script>
+{% endblock %}

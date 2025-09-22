@@ -1,0 +1,39 @@
+
+services:
+  qrpayhub:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: qrpayhub-app
+    ports:
+      - "80:8000"
+    volumes:
+      - .:/app
+      - ./logs:/app/logs
+      - ./qrpayhub.db:/app/qrpayhub.db
+    environment:
+      - DATABASE_URL=sqlite:///./qrpayhub.db
+      - SECRET_KEY=mvp-secret-key-change-in-production
+      - ALGORITHM=HS256
+      - QR_TOKEN_EXPIRE_MINUTES=10
+      - BASE_URL=https://qrpayhub.i7.kg
+      # - BASE_URL=https://s4rwokahc.localto.net
+      - MONITORING_ALERTS_COOLDOWN_SECONDS=600
+      - MONITORING_ENABLE_SYSTEM_ALERTS=true
+      - RATE_LIMIT_REQUESTS_PER_MINUTE=100
+      - RATE_LIMIT_PAYMENT_INFO_PER_MINUTE=30
+      - RATE_LIMIT_WEBHOOK_PER_MINUTE=60
+      - RATE_LIMIT_QR_CREATION_PER_MINUTE=10
+      - RATE_LIMIT_BLOCK_DURATION_MINUTES=15
+      - ENABLE_BANK_SIMULATOR=true
+    working_dir: /app
+    restart: unless-stopped
+    networks:
+      - qrpayhub-network
+
+networks:
+  qrpayhub-network:
+    driver: bridge
+
+volumes:
+  qrpayhub-data:

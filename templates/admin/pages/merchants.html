@@ -1,0 +1,505 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Продавцы{% endblock %}
+{% block page_title %}Управление продавцами{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <p class="text-secondary">Управление зарегистрированными продавцами и их настройками</p>
+    
+    <div style="display: flex; gap: 12px; margin-top: 16px; align-items: center;">
+        <button class="btn primary" onclick="loadMerchants()">🔄 Обновить</button>
+        <button class="btn" onclick="exportMerchants()">📊 Экспорт</button>
+        
+        <!-- Фильтр по статусу -->
+        <select id="status-filter" onchange="applyFilters()" style="padding: 8px; border-radius: 6px; border: 1px solid var(--border-color);">
+            <option value="">Все статусы</option>
+                <option value="active">Активные</option>
+                <option value="inactive">Неактивные</option>
+            <option value="pending">Не проверены</option>
+            <option value="suspended">Деактивированные</option>
+            </select>
+        
+        <input type="search" id="search-input" placeholder="Поиск по названию, email..." onkeyup="applyFilters()" style="padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); width: 250px;">
+    </div>
+</div>
+
+<div id="merchants-loading" class="loading">Загрузка продавцов...</div>
+
+<div id="merchants-content" style="display: none;">
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Продавец</th>
+                    <th>Email</th>
+                    <th>Верификация</th>
+                    <th>QR-кодов</th>
+                    <th>Платежей</th>
+                    <th>Регистрация</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody id="merchants-table-body">
+                <!-- Данные будут загружены -->
+            </tbody>
+        </table>
+    </div>
+        </div>
+
+<!-- Пагинация -->
+<div id="pagination-container" style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+    <div class="text-secondary" id="pagination-info">
+        Загрузка...
+        </div>
+    <div style="display: flex; gap: 8px;" id="pagination-buttons">
+        <!-- Кнопки пагинации будут добавлены динамически -->
+        </div>
+    </div>
+
+<!-- Статистика -->
+<div class="grid cols-4 mb-6" style="margin-top: 32px;" id="merchant-stats">
+    <div class="card">
+        <h3>Всего продавцов</h3>
+        <div style="font-size: 24px; font-weight: bold; color: var(--primary-600); margin: 8px 0;" id="total-merchants">
+            0
+        </div>
+        <div class="text-sm muted">Зарегистрировано</div>
+    </div>
+    
+    <div class="card">
+        <h3>Активных</h3>
+        <div style="font-size: 24px; font-weight: bold; color: #10b981; margin: 8px 0;" id="active-merchants">
+            0
+        </div>
+        <div class="text-sm muted">Работающих</div>
+    </div>
+    
+    <div class="card">
+        <h3>Не проверены</h3>
+        <div style="font-size: 24px; font-weight: bold; color: #f59e0b; margin: 8px 0;" id="pending-merchants">
+            0
+        </div>
+        <div class="text-sm muted">Ожидают проверки</div>
+</div>
+
+<div class="card">
+        <h3>Неактивных</h3>
+        <div style="font-size: 24px; font-weight: bold; color: #dc2626; margin: 8px 0;" id="suspended-merchants">
+            0
+        </div>
+        <div class="text-sm muted">Деактивированных</div>
+    </div>
+</div>
+
+<!-- Модальное окно деталей продавца -->
+<div id="merchant-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: var(--bg-secondary); padding: 24px; border-radius: 12px; max-width: 900px; width: 90%; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">Детали продавца</h3>
+            <button onclick="hideMerchantModal()" style="background: none; border: none; font-size: 20px; cursor: pointer;">✕</button>
+        </div>
+        <div id="merchant-details">
+            <!-- Детали будут загружены -->
+        </div>
+    </div>
+</div>
+
+<script>
+let currentPage = 1;
+let pageSize = 20;
+let allMerchants = [];
+let filteredMerchants = [];
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadMerchants();
+    
+    // Автообновление каждые 60 секунд
+    setInterval(loadMerchants, 60000);
+});
+
+async function loadMerchants() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        if (!token) {
+            window.location.href = '/admin/login';
+            return;
+        }
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/merchants'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки продавцов');
+        }
+        
+        const responseData = await response.json();
+        allMerchants = Array.isArray(responseData) ? responseData : (responseData.merchants || []);
+        filteredMerchants = [...allMerchants];
+        
+        displayMerchants();
+        updateStatistics();
+        updatePagination();
+        
+        document.getElementById('merchants-loading').style.display = 'none';
+        document.getElementById('merchants-content').style.display = 'block';
+        
+    } catch (error) {
+        console.error('Ошибка загрузки продавцов:', error);
+        showError('Ошибка загрузки продавцов: ' + error.message);
+    }
+}
+
+function displayMerchants() {
+    const tbody = document.getElementById('merchants-table-body');
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const merchants = filteredMerchants.slice(startIndex, endIndex);
+    
+    if (merchants.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center muted">Нет продавцов</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = merchants.map(merchant => `
+                        <tr>
+                            <td>
+                <div>
+                    <div><strong>${merchant.business_name || merchant.name || 'N/A'}</strong></div>
+                                </div>
+                            </td>
+            <td>${merchant.email || 'N/A'}</td>
+            <td>
+                <span class="badge ${merchant.is_verified ? 'ok' : 'warn'}">${merchant.is_verified ? 'Проверен' : 'Не проверен'}</span>
+                            </td>
+            <td>${merchant.qr_codes_count || 0}</td>
+            <td>${merchant.payments_count || 0}</td>
+            <td>${formatDate(merchant.created_at)}</td>
+            <td>
+                <div class="table-actions">
+                    <button class="btn-table primary" onclick="viewMerchantDetails('${merchant.id}')" title="Детали">👁️</button>
+                    <button class="btn-table ${merchant.is_active ? 'danger' : 'primary'}" onclick="toggleMerchantStatus('${merchant.id}')" title="${merchant.is_active ? 'Деактивировать' : 'Активировать'}">
+                        ${merchant.is_active ? '⏸️' : '▶️'}
+                                </button>
+                    ${!merchant.is_verified ? `<button class="btn-table primary" onclick="verifyMerchant('${merchant.id}')" title="Верифицировать">✅</button>` : ''}
+                </div>
+                            </td>
+                        </tr>
+    `).join('');
+}
+
+function updateStatistics() {
+    const totalMerchants = allMerchants.length;
+    const activeMerchants = allMerchants.filter(m => m.is_active).length;
+    const pendingMerchants = allMerchants.filter(m => !m.is_verified).length;
+    const suspendedMerchants = allMerchants.filter(m => !m.is_active).length;
+    
+    document.getElementById('total-merchants').textContent = totalMerchants;
+    document.getElementById('active-merchants').textContent = activeMerchants;
+    document.getElementById('pending-merchants').textContent = pendingMerchants;
+    document.getElementById('suspended-merchants').textContent = suspendedMerchants;
+}
+
+function updatePagination() {
+    const totalPages = Math.ceil(filteredMerchants.length / pageSize);
+    const startIndex = (currentPage - 1) * pageSize + 1;
+    const endIndex = Math.min(currentPage * pageSize, filteredMerchants.length);
+    
+    document.getElementById('pagination-info').textContent = 
+        `Показано ${startIndex}-${endIndex} из ${filteredMerchants.length} продавцов`;
+    
+    const buttonsContainer = document.getElementById('pagination-buttons');
+    buttonsContainer.innerHTML = '';
+    
+    if (totalPages > 1) {
+    if (currentPage > 1) {
+            buttonsContainer.innerHTML += `<button class="btn" onclick="changePage(${currentPage - 1})">← Предыдущая</button>`;
+        }
+        
+        for (let i = Math.max(1, currentPage - 2); i <= Math.min(totalPages, currentPage + 2); i++) {
+            const isActive = i === currentPage ? 'primary' : '';
+            buttonsContainer.innerHTML += `<button class="btn ${isActive}" onclick="changePage(${i})">${i}</button>`;
+        }
+        
+        if (currentPage < totalPages) {
+            buttonsContainer.innerHTML += `<button class="btn" onclick="changePage(${currentPage + 1})">Следующая →</button>`;
+        }
+    }
+}
+
+function changePage(page) {
+    currentPage = page;
+    displayMerchants();
+    updatePagination();
+}
+
+function applyFilters() {
+    const statusFilter = document.getElementById('status-filter').value;
+    const searchTerm = document.getElementById('search-input').value.toLowerCase();
+    
+    filteredMerchants = allMerchants.filter(merchant => {
+        let matchesStatus = true;
+        if (statusFilter === 'active') {
+            matchesStatus = merchant.is_active;
+        } else if (statusFilter === 'inactive') {
+            matchesStatus = !merchant.is_active;
+        } else if (statusFilter === 'pending') {
+            matchesStatus = !merchant.is_verified;
+        } else if (statusFilter === 'suspended') {
+            matchesStatus = !merchant.is_active;
+        }
+        
+        const matchesSearch = !searchTerm || 
+            (merchant.business_name && merchant.business_name.toLowerCase().includes(searchTerm)) ||
+            (merchant.name && merchant.name.toLowerCase().includes(searchTerm)) ||
+            (merchant.email && merchant.email.toLowerCase().includes(searchTerm)) ||
+            (merchant.contact_person && merchant.contact_person.toLowerCase().includes(searchTerm));
+        
+        return matchesStatus && matchesSearch;
+    });
+    
+    currentPage = 1;
+    displayMerchants();
+    updatePagination();
+}
+
+async function viewMerchantDetails(merchantId) {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/merchants/${merchantId}`), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки деталей продавца');
+        }
+        
+        const merchant = await response.json();
+        showMerchantModal(merchant);
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('❌ Ошибка: ' + error.message);
+    }
+}
+
+function showMerchantModal(merchant) {
+    const modal = document.getElementById('merchant-modal');
+    const detailsContainer = document.getElementById('merchant-details');
+    
+    detailsContainer.innerHTML = `
+        <div class="grid cols-2" style="gap: 20px; margin-bottom: 20px;">
+            <div>
+                <h4>Основная информация</h4>
+                <div style="background: var(--bg-tertiary); padding: 16px; border-radius: 8px;">
+                    <div style="margin-bottom: 8px;"><strong>Название:</strong> ${merchant.business_name || merchant.name || 'N/A'}</div>
+                    <div style="margin-bottom: 8px;"><strong>Email:</strong> ${merchant.email || 'N/A'}</div>
+                    <div style="margin-bottom: 8px;"><strong>Телефон:</strong> ${merchant.phone || 'N/A'}</div>
+                    <div style="margin-bottom: 8px;"><strong>Контактное лицо:</strong> ${merchant.contact_person || 'N/A'}</div>
+                    <div style="margin-bottom: 8px;"><strong>Активен:</strong> <span class="badge ${merchant.is_active ? 'ok' : 'err'}">${merchant.is_active ? 'Да' : 'Нет'}</span></div>
+                    <div><strong>Верификация:</strong> <span class="badge ${merchant.is_verified ? 'ok' : 'warn'}">${merchant.is_verified ? 'Проверен' : 'Не проверен'}</span></div>
+                </div>
+            </div>
+            <div>
+                <h4>Реквизиты</h4>
+                <div style="background: var(--bg-tertiary); padding: 16px; border-radius: 8px;">
+                    <div style="margin-bottom: 8px;"><strong>Банк:</strong> ${merchant.bank_name || 'N/A'}</div>
+                    <div style="margin-bottom: 8px;"><strong>Счет:</strong> ${merchant.bank_account || 'N/A'}</div>
+                    <div style="margin-bottom: 8px;"><strong>ИНН:</strong> ${merchant.inn || 'N/A'}</div>
+                    <div style="margin-bottom: 8px;"><strong>Адрес:</strong> ${merchant.address || 'N/A'}</div>
+                    <div><strong>Регистрация:</strong> ${formatDateTime(merchant.created_at)}</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="grid cols-3" style="gap: 16px; margin-bottom: 20px;">
+            <div>
+                <h4>Статистика</h4>
+                <div style="background: var(--bg-tertiary); padding: 16px; border-radius: 8px;">
+                    <div style="margin-bottom: 8px;"><strong>QR-кодов:</strong> ${merchant.qr_codes_count || 0}</div>
+                    <div style="margin-bottom: 8px;"><strong>Платежей:</strong> ${merchant.payments_count || 0}</div>
+                    <div><strong>Общая сумма:</strong> ${merchant.total_amount || 0} KGS</div>
+                </div>
+            </div>
+            <div>
+                <h4>Настройки</h4>
+                <div style="background: var(--bg-tertiary); padding: 16px; border-radius: 8px;">
+                    <div style="margin-bottom: 8px;"><strong>Дневной лимит:</strong> ${merchant.daily_limit || 'Не установлен'}</div>
+                    <div style="margin-bottom: 8px;"><strong>Месячный лимит:</strong> ${merchant.monthly_limit || 'Не установлен'}</div>
+                    <div><strong>Webhook URL:</strong> ${merchant.webhook_url || 'Не установлен'}</div>
+                </div>
+            </div>
+            <div>
+                <h4>Безопасность</h4>
+                <div style="background: var(--bg-tertiary); padding: 16px; border-radius: 8px;">
+                    <div style="margin-bottom: 8px;"><strong>API ключ:</strong> ${merchant.api_key ? '************' : 'Не создан'}</div>
+                    <div style="margin-bottom: 8px;"><strong>Последний вход:</strong> ${formatDateTime(merchant.last_login_at)}</div>
+                    <div><strong>IP последнего входа:</strong> ${merchant.last_login_ip || 'N/A'}</div>
+                </div>
+            </div>
+        </div>
+        
+        <div style="display: flex; gap: 12px; justify-content: flex-end; padding-top: 16px; border-top: 1px solid var(--border-color);">
+            <button class="btn ${merchant.is_active ? 'danger' : 'primary'}" onclick="toggleMerchantStatus('${merchant.id}')">
+                ${merchant.is_active ? '⏸️ Деактивировать' : '▶️ Активировать'}
+            </button>
+            ${!merchant.is_verified ? `<button class="btn primary" onclick="verifyMerchant('${merchant.id}')">✅ Верифицировать</button>` : ''}
+        </div>
+    `;
+    
+    modal.style.display = 'flex';
+}
+
+function hideMerchantModal() {
+    document.getElementById('merchant-modal').style.display = 'none';
+}
+
+async function toggleMerchantStatus(merchantId) {
+    const merchant = allMerchants.find(m => m.id == merchantId);
+    if (!merchant) {
+        alert('❌ Продавец не найден');
+        return;
+    }
+    const action = merchant.is_active ? 'деактивировать' : 'активировать';
+    
+    if (!confirm(`${action} продавца?`)) return;
+    
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/merchants/${merchantId}/toggle-status`), {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка изменения статуса продавца');
+        }
+        
+        const result = await response.json();
+        alert('✅ ' + result.message);
+        loadMerchants();
+        hideMerchantModal();
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('❌ Ошибка: ' + error.message);
+    }
+}
+
+async function verifyMerchant(merchantId) {
+    const merchant = allMerchants.find(m => m.id == merchantId);
+    if (!merchant) {
+        alert('❌ Продавец не найден');
+        return;
+    }
+    if (!confirm('Верифицировать продавца?')) return;
+    
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/merchants/${merchantId}/verify`), {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка верификации продавца');
+        }
+        
+        const result = await response.json();
+        alert('✅ ' + result.message);
+        loadMerchants();
+        hideMerchantModal();
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('❌ Ошибка: ' + error.message);
+    }
+}
+
+function viewMerchantPayments(merchantId) {
+    window.open(`/admin/merchants/${merchantId}/payments`, '_blank');
+}
+
+function viewMerchantQRCodes(merchantId) {
+    window.open(`/admin/merchants/${merchantId}/qr-codes`, '_blank');
+}
+
+function exportMerchants() {
+    const csvContent = generateCSV(filteredMerchants);
+    downloadCSV(csvContent, 'merchants_export.csv');
+}
+
+function generateCSV(merchants) {
+    const headers = ['Название', 'Email', 'Телефон', 'Активен', 'Верификация', 'QR-кодов', 'Платежей', 'Регистрация'];
+    const rows = merchants.map(m => [
+        m.business_name || m.name || '',
+        m.email || '',
+        m.phone || '',
+        m.is_active ? 'Да' : 'Нет',
+        m.is_verified ? 'Проверен' : 'Не проверен',
+        m.qr_codes_count || 0,
+        m.payments_count || 0,
+        formatDate(m.created_at)
+    ]);
+    
+    return [headers, ...rows].map(row => row.join(',')).join('\n');
+}
+
+function downloadCSV(content, filename) {
+    const blob = new Blob([content], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+}
+
+// Утилиты
+function getStatusBadgeClass(status) {
+    const classes = {
+        'active': 'ok',
+        'inactive': 'err',
+        'pending': 'warn',
+        'suspended': 'err'
+    };
+    return classes[status] || 'info';
+}
+
+function getStatusText(status) {
+    const texts = {
+        'active': 'Активен',
+        'inactive': 'Неактивен',
+        'pending': 'На модерации',
+        'suspended': 'Заблокирован'
+    };
+    return texts[status] || status;
+}
+
+function formatDate(dateString) {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('ru-RU');
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleString('ru-RU');
+}
+
+function showError(message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error';
+    errorDiv.textContent = message;
+    document.querySelector('.content-area').insertBefore(errorDiv, document.querySelector('.content-area').firstChild);
+    
+    setTimeout(() => {
+        errorDiv.remove();
+    }, 5000);
+}
+</script>
+{% endblock %}

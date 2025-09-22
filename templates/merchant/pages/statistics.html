@@ -1,0 +1,570 @@
+{% extends "merchant/layout.html" %}
+
+{% block title %}Статистика — QRPayHub{% endblock %}
+
+{% block extra_styles %}
+<style>
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 16px;
+        margin-bottom: 20px;
+    }
+    .chart-container {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 16px;
+        margin: 16px 0;
+    }
+    .chart-wrapper {
+        position: relative;
+        height: 300px !important;
+        width: 100%;
+        min-height: 300px;
+    }
+    .chart-wrapper canvas {
+        height: 300px !important;
+        min-height: 300px;
+        max-height: 300px !important;
+    }
+    /* Переопределяем inline стили Chart.js */
+    .chart-wrapper canvas[style*="height"] {
+        height: 300px !important;
+        min-height: 300px !important;
+        max-height: 300px !important;
+    }
+    
+    /* Принудительно переопределяем любые стили высоты */
+    .chart-wrapper canvas {
+        height: 300px !important;
+        min-height: 300px !important;
+        max-height: 300px !important;
+    }
+    
+    /* Переопределяем даже если есть inline стили */
+    .chart-wrapper canvas[style] {
+        height: 300px !important;
+        min-height: 300px !important;
+        max-height: 300px !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Основные показатели -->
+<div class="stats-grid">
+    <div class="card">
+        <h3>Общая статистика</h3>
+        <div id="general-stats">
+            <div class="loading">Загрузка...</div>
+        </div>
+    </div>
+    <div class="card">
+        <h3>Эффективность QR-кодов</h3>
+        <div id="qr-efficiency">
+            <div class="loading">Загрузка...</div>
+        </div>
+    </div>
+    <div class="card">
+        <h3>Торговые точки</h3>
+        <div id="outlets-stats">
+            <div class="loading">Загрузка...</div>
+        </div>
+    </div>
+    <div class="card">
+        <h3>Топ дни</h3>
+        <div id="top-days">
+            <div class="loading">Загрузка...</div>
+        </div>
+    </div>
+</div>
+
+<!-- Графики -->
+<div class="grid cols-2">
+    <div class="chart-container">
+        <h3>Динамика платежей</h3>
+        <div class="chart-wrapper">
+            <canvas id="payments-trend-chart"></canvas>
+            <div id="payments-trend-loading" class="loading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">Загрузка графика...</div>
+        </div>
+    </div>
+    <div class="chart-container">
+        <h3>Распределение по статусам</h3>
+        <div class="chart-wrapper">
+            <canvas id="status-chart"></canvas>
+            <div id="status-loading" class="loading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">Загрузка графика...</div>
+        </div>
+    </div>
+</div>
+
+<div class="chart-container">
+    <h3>Оборот по дням недели</h3>
+    <div class="chart-wrapper">
+        <canvas id="weekdays-chart"></canvas>
+        <div id="weekdays-loading" class="loading" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);">Загрузка графика...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+let paymentsTrendChart = null;
+let statusChart = null;
+let weekdaysChart = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadStatistics();
+});
+
+async function loadStatistics() {
+    try {
+        const token = requireMerchantAuth();
+        if (!token) return;
+        
+        // Загружаем статистику за все время (по умолчанию)
+        const response = await fetch('/api/v1/merchant/stats?period=all', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка загрузки статистики');
+        }
+        
+        const stats = await response.json();
+        console.log('Данные статистики:', stats);
+        console.log('Общая статистика - платежи:', stats.total_payments, 'успешные:', stats.successful_payments, 'сумма:', stats.total_amount);
+        updateStatistics(stats);
+        
+        // Загружаем серию данных для графиков (за последние 30 дней)
+        await loadChartsData(stats);
+        
+    } catch (error) {
+        console.error('Ошибка загрузки статистики:', error);
+        showAlert('Ошибка загрузки статистики: ' + error.message, 'error');
+        showError('Ошибка загрузки данных');
+    }
+}
+
+function updateStatistics(stats) {
+    // Общая статистика
+    document.getElementById('general-stats').innerHTML = `
+        <div style="display: grid; gap: 8px;">
+            <div style="display: flex; justify-content: space-between;">
+                <span>Всего платежей:</span>
+                <strong>${stats.total_payments || 0}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span>Успешных:</span>
+                <strong style="color: var(--primary-600);">${stats.successful_payments || 0}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span>Общий оборот:</span>
+                <strong>${formatAmount(stats.total_amount || 0)}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span>Средний чек:</span>
+                <strong>${formatAmount(stats.average_payment_amount || 0)}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span>Успешность:</span>
+                <strong>${formatPercent(stats.success_rate || 0)}</strong>
+            </div>
+        </div>
+    `;
+    
+    // Эффективность QR-кодов
+    document.getElementById('qr-efficiency').innerHTML = `
+        <div style="display: grid; gap: 8px;">
+            <div style="display: flex; justify-content: space-between;">
+                <span>Активных QR:</span>
+                <strong>${stats.active_qr_codes || 0}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span>Всего QR:</span>
+                <strong>${stats.total_qr_codes || 0}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span>Средн. платежей на QR:</span>
+                <strong>${stats.total_qr_codes > 0 ? (stats.total_payments / stats.total_qr_codes).toFixed(1) : 0}</strong>
+            </div>
+        </div>
+    `;
+    
+    // Торговые точки - показываем общую информацию
+    document.getElementById('outlets-stats').innerHTML = `
+        <div style="display: grid; gap: 8px;">
+            <div style="display: flex; justify-content: space-between;">
+                <span>Активных точек:</span>
+                <strong>${stats.active_outlets || 0}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span>Всего точек:</span>
+                <strong>${stats.total_outlets || 0}</strong>
+            </div>
+        </div>
+    `;
+    
+    // Топ дни - показываем общую информацию
+    document.getElementById('top-days').innerHTML = `
+        <div style="display: grid; gap: 8px;">
+            <div style="display: flex; justify-content: space-between;">
+                <span>Сегодня:</span>
+                <strong>${formatAmount(stats.today_amount || 0)}</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span>Вчера:</span>
+                <strong>${formatAmount(stats.yesterday_amount || 0)}</strong>
+            </div>
+        </div>
+    `;
+}
+
+async function loadChartsData(stats) {
+    try {
+        const token = requireMerchantAuth();
+        if (!token) return;
+        
+        // Загружаем серию платежей за последние 90 дней (больший период)
+        const seriesResponse = await fetch('/api/v1/merchant/payments/series?days=90', {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        let seriesData = { data: [] };
+        
+        if (seriesResponse.ok) {
+            seriesData = await seriesResponse.json();
+            console.log('Данные серии платежей:', seriesData);
+            console.log('Массив данных:', seriesData.data);
+            console.log('Первый элемент:', seriesData.data?.[0]);
+            console.log('Количество элементов:', seriesData.data?.length);
+            
+            const chartData = seriesData.data || [];
+            console.log('Данные для графиков:', chartData);
+            
+            updatePaymentsTrendChart(chartData);
+            updateStatusChart(chartData, stats);
+        } else {
+            const errorData = await seriesResponse.json();
+            console.error('Ошибка загрузки серии данных:', errorData.detail || errorData.message);
+        }
+        
+        // Создаем данные для графика по дням недели
+        updateWeekdaysChart(seriesData.data || []);
+        
+    } catch (error) {
+        console.error('Ошибка загрузки данных для графиков:', error);
+        showAlert('Ошибка загрузки данных для графиков: ' + error.message, 'error');
+        
+        // Показываем пустые графики при ошибке
+        updatePaymentsTrendChart([]);
+        updateStatusChart([], {});
+        updateWeekdaysChart([]);
+    }
+}
+
+function updatePaymentsTrendChart(data) {
+    const canvas = document.getElementById('payments-trend-chart');
+    const loadingEl = document.getElementById('payments-trend-loading');
+    if (!canvas) return;
+    
+    if (paymentsTrendChart) paymentsTrendChart.destroy();
+    
+    // Скрываем индикатор загрузки
+    if (loadingEl) loadingEl.style.display = 'none';
+    
+    const ctx = canvas.getContext('2d');
+    
+    // Проверяем, есть ли данные
+    if (!data || data.length === 0) {
+        paymentsTrendChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Нет данных'],
+                datasets: [{
+                    label: 'Оборот (KGS)',
+                    data: [0],
+                    borderColor: '#e5e7eb',
+                    backgroundColor: 'rgba(229,231,235,0.1)',
+                    yAxisID: 'y',
+                    tension: 0.3
+                }, {
+                    label: 'Количество платежей',
+                    data: [0],
+                    borderColor: '#e5e7eb',
+                    backgroundColor: 'rgba(229,231,235,0.1)',
+                    yAxisID: 'y1',
+                    tension: 0.3
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: { display: true, text: 'Оборот (KGS)' }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: { display: true, text: 'Количество' },
+                        grid: { drawOnChartArea: false }
+                    }
+                }
+            }
+        });
+        return;
+    }
+    
+    console.log('Обновление графика динамики платежей с данными:', data);
+    const labels = data.map(d => d.date);
+    const amounts = data.map(d => d.total_amount || 0);
+    const counts = data.map(d => d.payments_count || 0);
+    const chartData = {
+        labels: labels,
+        datasets: [{
+            label: 'Оборот (KGS)',
+            data: amounts,
+            borderColor: '#059669',
+            backgroundColor: 'rgba(5,150,105,0.1)',
+            yAxisID: 'y',
+            tension: 0.3
+        }, {
+            label: 'Количество платежей',
+            data: counts,
+            borderColor: '#0ea5e9',
+            backgroundColor: 'rgba(14,165,233,0.1)',
+            yAxisID: 'y1',
+            tension: 0.3
+        }]
+    };
+    
+
+    
+    paymentsTrendChart = new Chart(ctx, {
+        type: 'line',
+        data: chartData,
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: { display: true, text: 'Оборот (KGS)' }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    title: { display: true, text: 'Количество' },
+                    grid: { drawOnChartArea: false }
+                }
+            }
+        }
+    });
+    
+    // Принудительно устанавливаем высоту canvas
+    setTimeout(() => {
+        const canvas = document.getElementById('payments-trend-chart');
+        if (canvas) {
+            canvas.style.height = '300px';
+            canvas.style.minHeight = '300px';
+            canvas.style.maxHeight = '300px';
+        }
+    }, 100);
+    
+    // Дополнительная проверка через 500ms
+    setTimeout(() => {
+        const canvas = document.getElementById('payments-trend-chart');
+        if (canvas) {
+            canvas.style.height = '300px';
+            canvas.style.minHeight = '300px';
+            canvas.style.maxHeight = '300px';
+        }
+    }, 500);
+}
+
+function updateStatusChart(data, stats) {
+    const canvas = document.getElementById('status-chart');
+    const loadingEl = document.getElementById('status-loading');
+    if (!canvas) return;
+    
+    if (statusChart) statusChart.destroy();
+    
+    // Скрываем индикатор загрузки
+    if (loadingEl) loadingEl.style.display = 'none';
+    
+    console.log('Обновление графика статусов с данными:', data);
+    console.log('Статистика для статусов:', stats);
+    
+    // Используем данные о статусах из статистики
+    const statusDistribution = stats.status_distribution || {};
+    console.log('Распределение по статусам:', statusDistribution);
+    
+    // Если нет данных, показываем пустой график
+    if (Object.keys(statusDistribution).length === 0) {
+        const ctx = canvas.getContext('2d');
+        statusChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Нет данных'],
+                datasets: [{
+                    data: [1],
+                    backgroundColor: ['#e5e7eb'],
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { position: 'bottom' }
+                }
+            }
+        });
+        return;
+    }
+    
+    // Показываем реальное распределение по статусам
+    const statusLabels = {
+        'completed': 'Завершенные',
+        'pending': 'В обработке',
+        'failed': 'Ошибка',
+        'cancelled': 'Отмененные'
+    };
+    
+    const statusData = {};
+    const colors = ['#059669', '#f59e0b', '#dc2626', '#6b7280'];
+    let colorIndex = 0;
+    
+    Object.entries(statusDistribution).forEach(([status, count]) => {
+        const label = statusLabels[status] || status;
+        statusData[label] = count;
+    });
+    
+    const ctx = canvas.getContext('2d');
+    
+    statusChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(statusData),
+            datasets: [{
+                data: Object.values(statusData),
+                backgroundColor: colors.slice(0, Object.keys(statusData).length),
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'bottom' }
+            }
+        }
+    });
+}
+
+function updateWeekdaysChart(data) {
+    const canvas = document.getElementById('weekdays-chart');
+    const loadingEl = document.getElementById('weekdays-loading');
+    if (!canvas) return;
+    
+    if (weekdaysChart) weekdaysChart.destroy();
+    
+    // Скрываем индикатор загрузки
+    if (loadingEl) loadingEl.style.display = 'none';
+    
+    const weekdays = ['Понедельник', 'Вторник', 'Среда', 'Четверг', 'Пятница', 'Суббота', 'Воскресенье'];
+    
+    // Если нет данных, показываем нули
+    if (!data || data.length === 0) {
+        const ctx = canvas.getContext('2d');
+        weekdaysChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: weekdays,
+                datasets: [{
+                    label: 'Оборот (KGS)',
+                    data: [0, 0, 0, 0, 0, 0, 0],
+                    backgroundColor: 'rgba(229,231,235,0.7)',
+                    borderColor: '#e5e7eb',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Оборот (KGS)' }
+                    }
+                }
+            }
+        });
+        return;
+    }
+    
+    console.log('Обновление графика по дням недели с данными:', data);
+    
+    // Группируем данные по дням недели
+    const weekdayData = [0, 0, 0, 0, 0, 0, 0]; // [пн, вт, ср, чт, пт, сб, вс]
+    
+    data.forEach(item => {
+        if (item.date) {
+            const date = new Date(item.date);
+            const dayOfWeek = date.getDay(); // 0 = воскресенье, 1 = понедельник, ...
+            const weekdayIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Преобразуем в наш формат
+            weekdayData[weekdayIndex] += item.total_amount || 0;
+        }
+    });
+    
+    const ctx = canvas.getContext('2d');
+    
+    weekdaysChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: weekdays,
+            datasets: [{
+                label: 'Оборот (KGS)',
+                data: weekdayData,
+                backgroundColor: 'rgba(5,150,105,0.7)',
+                borderColor: '#059669',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: 'Оборот (KGS)' }
+                }
+            }
+        }
+    });
+}
+
+function showError(message) {
+    document.getElementById('general-stats').innerHTML = `<div class="error">${message}</div>`;
+    document.getElementById('qr-efficiency').innerHTML = `<div class="error">${message}</div>`;
+    document.getElementById('outlets-stats').innerHTML = `<div class="error">${message}</div>`;
+    document.getElementById('top-days').innerHTML = `<div class="error">${message}</div>`;
+}
+</script>
+{% endblock %}

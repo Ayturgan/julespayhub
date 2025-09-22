@@ -1,0 +1,353 @@
+{% extends "merchant/layout.html" %}
+
+{% block title %}Торговые точки — QRPayHub{% endblock %}
+
+{% block content %}
+<div class="grid cols-2">
+    <div class="card">
+        <h2>Мои торговые точки</h2>
+        <div id="outlets-list" class="muted">Загрузка...</div>
+    </div>
+    <div class="card">
+        <h2>Добавить торговую точку</h2>
+        <form id="create-outlet-form">
+            <label>Название</label>
+            <input id="outlet-name" required placeholder="Например: Магазин на Чуй">
+            
+            <label>Адрес</label>
+            <textarea id="outlet-address" placeholder="Полный адрес торговой точки"></textarea>
+            
+            <label>Описание (опционально)</label>
+            <textarea id="outlet-description" placeholder="Дополнительная информация"></textarea>
+            
+            <div style="margin-top: 12px;">
+                <button type="submit" class="btn primary">Добавить точку</button>
+                <div id="outlet-msg" class="muted"></div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Модальное окно создания статичного QR-кода -->
+<div id="static-qr-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: var(--bg-secondary); padding: 24px; border-radius: 12px; max-width: 500px; width: 90%;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">Создать статичный QR-код</h3>
+            <button onclick="hideStaticQRModal()" style="background: none; border: none; font-size: 20px; cursor: pointer;">✕</button>
+        </div>
+        
+        <form id="create-static-qr-form">
+            <div class="form-group">
+                <label>Название QR-кода *</label>
+                <input type="text" id="static-qr-name" required placeholder="Например: QR-код магазина">
+            </div>
+            
+            <div class="form-group">
+                <label>Сумма (KGS)</label>
+                <input type="number" id="static-qr-amount" min="0" step="0.01" placeholder="Оставьте пустым для произвольной суммы">
+                <small class="help-text">Если не указана - покупатель введет сумму сам</small>
+            </div>
+            
+            <div class="form-group">
+                <label>Описание</label>
+                <textarea id="static-qr-description" rows="3" placeholder="Описание для чего этот QR-код"></textarea>
+            </div>
+            
+            <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+                <button type="button" class="btn" onclick="hideStaticQRModal()">Отменить</button>
+                <button type="submit" class="btn primary">Создать QR-код</button>
+            </div>
+        </form>
+        
+        <div id="static-qr-message" style="margin-top: 12px; font-size: 14px;"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadOutlets();
+    
+    document.getElementById('create-outlet-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        createOutlet();
+    });
+    
+    document.getElementById('create-static-qr-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        createStaticQRCode();
+    });
+});
+
+async function loadOutlets() {
+    try {
+        const token = requireMerchantAuth();
+        if (!token) return;
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/merchant/outlets'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка загрузки торговых точек');
+        }
+        
+        const outlets = await response.json();
+        displayOutlets(outlets);
+    } catch (error) {
+        console.error('Ошибка загрузки торговых точек:', error);
+        showAlert('Ошибка загрузки торговых точек: ' + error.message, 'error');
+        document.getElementById('outlets-list').innerHTML = '<div class="muted">Ошибка загрузки</div>';
+    }
+}
+
+function displayOutlets(outlets) {
+    const container = document.getElementById('outlets-list');
+    
+    if (!outlets || outlets.length === 0) {
+        container.innerHTML = '<div class="muted">У вас нет торговых точек</div>';
+        return;
+    }
+    
+    const html = outlets.map(outlet => {
+        const statusBadge = outlet.status === 'ACTIVE' ? 
+            '<span class="badge ok">Активна</span>' : 
+            '<span class="badge err">Архивирована</span>';
+        
+        return `
+            <div style="border-bottom: 1px solid var(--border-color); padding: 12px 0;">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                    <div>
+                        <strong>${outlet.name}</strong>
+                        ${outlet.address ? `<div class="muted" style="font-size: 12px; margin-top: 4px;">${outlet.address}</div>` : ''}
+                    </div>
+                    ${statusBadge}
+                </div>
+                ${outlet.description ? `<div class="muted" style="font-size: 12px; margin-bottom: 8px;">${outlet.description}</div>` : ''}
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn" onclick="getOutletStats(${outlet.id})" style="font-size: 12px;">Статистика</button>
+                    <button class="btn" onclick="createStaticQR(${outlet.id}, '${outlet.name}')" style="font-size: 12px;">📱 QR-код</button>
+                    <button class="btn" onclick="toggleOutletStatus(${outlet.id}, '${outlet.status}')" style="font-size: 12px;">
+                        ${outlet.status === 'ACTIVE' ? 'Архивировать' : 'Активировать'}
+                    </button>
+                    <button class="btn" onclick="editOutlet(${outlet.id})" style="font-size: 12px;">Редактировать</button>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    container.innerHTML = html;
+}
+
+async function createOutlet() {
+    const name = document.getElementById('outlet-name').value.trim();
+    const address = document.getElementById('outlet-address').value.trim();
+    const description = document.getElementById('outlet-description').value.trim();
+    const msgEl = document.getElementById('outlet-msg');
+    
+    if (!name) {
+        showAlert('Введите название торговой точки', 'error');
+        return;
+    }
+    
+    try {
+        const token = requireMerchantAuth();
+        if (!token) return;
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/merchant/outlets'), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                name: name,
+                address: address || null,
+                description: description || null
+            })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка создания торговой точки');
+        }
+        
+        const result = await response.json();
+        showAlert('Торговая точка успешно добавлена!', 'success');
+        
+        // Очищаем форму
+        document.getElementById('create-outlet-form').reset();
+        
+        // Перезагружаем список
+        loadOutlets();
+        
+    } catch (error) {
+        console.error('Ошибка создания торговой точки:', error);
+        showAlert('Ошибка создания торговой точки: ' + error.message, 'error');
+    }
+}
+
+async function getOutletStats(outletId) {
+    try {
+        const token = requireMerchantAuth();
+        if (!token) return;
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/merchant/outlets/${outletId}/stats`), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка загрузки статистики');
+        }
+        
+        const stats = await response.json();
+        
+        const statsText = `
+Статистика торговой точки
+
+За 24 часа:
+Платежей: ${stats.data?.payments_count || 0}
+Оборот: ${formatAmount(stats.data?.total_amount || 0)}
+Средний чек: ${formatAmount(stats.data?.avg_amount || 0)}
+
+Успешность: ${formatPercent(stats.data?.success_rate || 0)}
+        `;
+        
+        showAlert(statsText, 'info');
+        
+    } catch (error) {
+        console.error('Ошибка загрузки статистики:', error);
+        showAlert('Ошибка загрузки статистики: ' + error.message, 'error');
+    }
+}
+
+async function toggleOutletStatus(outletId, currentStatus) {
+    const newStatus = currentStatus === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE';
+    const action = newStatus === 'ACTIVE' ? 'активировать' : 'архивировать';
+    
+    if (!confirm(`Вы уверены, что хотите ${action} эту торговую точку?`)) {
+        return;
+    }
+    
+    try {
+        const token = requireMerchantAuth();
+        if (!token) return;
+        
+        const endpoint = newStatus === 'ACTIVE' ? 'activate' : 'archive';
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/merchant/outlets/${outletId}/${endpoint}`), {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка изменения статуса торговой точки');
+        }
+        
+        const result = await response.json();
+        showAlert(result.message || `Торговая точка ${action}`, 'success');
+        loadOutlets(); // Перезагружаем список
+        
+    } catch (error) {
+        console.error('Ошибка изменения статуса:', error);
+        showAlert('Ошибка изменения статуса: ' + error.message, 'error');
+    }
+}
+
+function editOutlet(outletId) {
+    // Упрощенная реализация - просто перезагружаем список
+    // В реальном приложении здесь был бы модальный диалог редактирования
+    showAlert('Функция редактирования будет добавлена в следующих версиях', 'info');
+}
+
+// Функции для работы со статичными QR-кодами
+let currentOutletId = null;
+let currentOutletName = '';
+
+function createStaticQR(outletId, outletName) {
+    currentOutletId = outletId;
+    currentOutletName = outletName;
+    
+    // Предзаполняем название QR-кода
+    document.getElementById('static-qr-name').value = `QR-код ${outletName}`;
+    
+    // Показываем модальное окно
+    document.getElementById('static-qr-modal').style.display = 'flex';
+}
+
+function hideStaticQRModal() {
+    document.getElementById('static-qr-modal').style.display = 'none';
+    document.getElementById('create-static-qr-form').reset();
+    document.getElementById('static-qr-message').textContent = '';
+    currentOutletId = null;
+    currentOutletName = '';
+}
+
+async function createStaticQRCode() {
+    const name = document.getElementById('static-qr-name').value.trim();
+    const amount = document.getElementById('static-qr-amount').value;
+    const description = document.getElementById('static-qr-description').value.trim();
+    
+    if (!name) {
+        showStaticQRMessage('Заполните название QR-кода', 'error');
+        return;
+    }
+    
+    try {
+        showStaticQRMessage('Создание QR-кода...', 'info');
+        
+        const token = requireMerchantAuth();
+        if (!token) return;
+        
+        const response = await fetch('/api/v1/merchant/qr-codes', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                name: name,
+                amount: amount ? parseFloat(amount) : null,
+                description: description,
+                outlet_id: currentOutletId,
+                expires_in_minutes: 60
+            })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка создания QR-кода');
+        }
+        
+        const result = await response.json();
+        showStaticQRMessage('QR-код успешно создан!', 'success');
+        
+        setTimeout(() => {
+            hideStaticQRModal();
+            // Можно добавить переход к QR-кодам или показать созданный QR
+            window.location.href = '/merchant/qr-codes';
+        }, 1500);
+        
+    } catch (error) {
+        console.error('Ошибка создания QR-кода:', error);
+        showStaticQRMessage('Ошибка: ' + error.message, 'error');
+    }
+}
+
+function showStaticQRMessage(message, type) {
+    const messageEl = document.getElementById('static-qr-message');
+    messageEl.style.color = type === 'error' ? '#dc2626' : type === 'success' ? '#10b981' : '#3b82f6';
+    messageEl.textContent = message;
+    
+    setTimeout(() => {
+        messageEl.textContent = '';
+    }, 5000);
+}
+</script>
+{% endblock %}

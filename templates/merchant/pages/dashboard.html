@@ -1,0 +1,411 @@
+{% extends "merchant/layout.html" %}
+
+{% block title %}Дашборд{% endblock %}
+{% block page_title %}Дашборд{% endblock %}
+{% block page_subtitle %}Обзор вашего бизнеса{% endblock %}
+
+{% block content %}
+<!-- Статистика -->
+<div class="grid cols-4 mb-6">
+    <div class="card">
+        <h3 class="mb-3">Общая выручка</h3>
+        <div style="font-size: 28px; font-weight: bold; color: var(--primary-600); margin: 12px 0;" id="total-revenue">
+            0 KGS
+        </div>
+        <div class="text-sm muted">За все время</div>
+    </div>
+    
+    <div class="card">
+        <h3 class="mb-3">Успешных платежей</h3>
+        <div style="font-size: 28px; font-weight: bold; color: #10b981; margin: 12px 0;" id="successful-payments">
+            0
+        </div>
+        <div class="text-sm muted">Завершенных</div>
+    </div>
+    
+    <div class="card">
+        <h3 class="mb-3">Активных QR-кодов</h3>
+        <div style="font-size: 28px; font-weight: bold; color: #f59e0b; margin: 12px 0;" id="active-qr-codes">
+            0
+        </div>
+        <div class="text-sm muted">Работающих</div>
+    </div>
+    
+    <div class="card">
+        <h3 class="mb-3">Процент успеха</h3>
+        <div style="font-size: 28px; font-weight: bold; color: var(--text-primary); margin: 12px 0;" id="success-rate">
+            0%
+        </div>
+        <div class="text-sm muted">Успешных транзакций</div>
+    </div>
+</div>
+
+<!-- Быстрые действия -->
+<div class="mb-6">
+    <div class="card">
+        <h3 class="mb-4">Быстрые действия</h3>
+        <div style="display: flex; gap: 16px; flex-wrap: wrap; justify-content: center;">
+            <button class="btn primary" onclick="createQuickQR()" style="min-width: 140px; padding: 16px 24px; font-size: 16px;">📱 Создать QR</button>
+            <button class="btn" onclick="viewPayments()" style="min-width: 140px; padding: 16px 24px; font-size: 16px;">💳 Платежи</button>
+            <button class="btn" onclick="viewStatistics()" style="min-width: 140px; padding: 16px 24px; font-size: 16px;">📊 Статистика</button>
+        </div>
+    </div>
+</div>
+
+<!-- Последние платежи -->
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3>Последние платежи</h3>
+        <button class="btn" onclick="viewAllPayments()">Посмотреть все</button>
+    </div>
+    
+    <div id="recent-payments-loading" class="loading" style="padding: 40px; text-align: center;">Загрузка платежей...</div>
+    
+    <div id="recent-payments-content" style="display: none;">
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Сумма</th>
+                        <th>Статус</th>
+                        <th>QR-код</th>
+                        <th>Дата</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody id="recent-payments-table">
+                    <!-- Данные будут загружены -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно деталей платежа -->
+<div id="payment-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: var(--bg-secondary); padding: 24px; border-radius: 12px; max-width: 800px; width: 90%; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">Детали платежа</h3>
+            <button onclick="hidePaymentModal()" style="background: none; border: none; font-size: 20px; cursor: pointer;">✕</button>
+        </div>
+        
+        <div id="payment-details">
+            <!-- Детали платежа будут загружены -->
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadDashboardData();
+    
+    // Автообновление каждые 30 секунд
+    setInterval(loadDashboardData, 30000);
+});
+
+async function loadDashboardData() {
+    try {
+        const token = requireMerchantAuth();
+        if (!token) {
+            console.log('Токен не найден, перенаправление на логин...');
+            return;
+        }
+        
+        console.log('Загружаем данные дашборда с токеном:', token.substring(0, 20) + '...');
+        
+        // Загружаем статистику
+        const statsResponse = await fetch(QRPayHub.utils.getApiUrl('/api/v1/merchant/stats?period=all'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (statsResponse.ok) {
+            const stats = await statsResponse.json();
+            console.log('Полученная статистика:', stats);
+            updateDashboardStats(stats);
+            console.log('Статистика загружена успешно');
+        } else {
+            console.error('Ошибка загрузки статистики:', statsResponse.status, statsResponse.statusText);
+            const errorData = await statsResponse.json().catch(() => ({}));
+            console.error('Детали ошибки:', errorData);
+        }
+        
+        // Загружаем быструю статистику
+        const quickStatsResponse = await fetch(QRPayHub.utils.getApiUrl('/api/v1/merchant/stats/quick'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (quickStatsResponse.ok) {
+            const quickStats = await quickStatsResponse.json();
+            console.log('Полученная быстрая статистика:', quickStats);
+            updateQuickStats(quickStats);
+            console.log('Быстрая статистика загружена успешно');
+        } else {
+            console.error('Ошибка загрузки быстрой статистики:', quickStatsResponse.status);
+        }
+        
+        // Загружаем последние платежи
+        loadRecentPayments();
+        
+    } catch (error) {
+        console.error('Ошибка загрузки дашборда:', error);
+        showAlert('Ошибка загрузки данных дашборда: ' + error.message, 'error');
+    }
+}
+
+function updateDashboardStats(stats) {
+    document.getElementById('total-revenue').textContent = `${formatAmount(stats.total_amount || 0)} KGS`;
+    document.getElementById('successful-payments').textContent = stats.successful_payments || 0;
+    document.getElementById('active-qr-codes').textContent = stats.active_qr_codes || 0;
+    document.getElementById('success-rate').textContent = `${formatPercent(stats.success_rate || 0)}`;
+}
+
+function updateQuickStats(quickStats) {
+    // Обновляем дополнительные данные если есть
+    if (quickStats.today_payments) {
+        // Можно добавить дополнительные поля
+    }
+}
+
+async function loadRecentPayments() {
+    try {
+        const token = requireMerchantAuth();
+        if (!token) {
+            console.log('Токен не найден для загрузки платежей');
+            return;
+        }
+        
+        console.log('Загружаем последние платежи...');
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/merchant/payments?limit=5'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            console.error('Ошибка загрузки платежей:', response.status, errorData);
+            throw new Error(`Ошибка загрузки платежей: ${response.status}`);
+        }
+        
+        const paymentsData = await response.json();
+        displayRecentPayments(paymentsData.payments || paymentsData);
+        
+        document.getElementById('recent-payments-loading').style.display = 'none';
+        document.getElementById('recent-payments-content').style.display = 'block';
+        console.log('Платежи загружены успешно');
+        
+    } catch (error) {
+        console.error('Ошибка загрузки платежей:', error);
+        document.getElementById('recent-payments-loading').innerHTML = '<div class="error">Ошибка загрузки платежей</div>';
+    }
+}
+
+function displayRecentPayments(payments) {
+    const tbody = document.getElementById('recent-payments-table');
+    
+    if (payments.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center muted">Нет платежей</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = payments.map(payment => `
+        <tr>
+            <td style="font-family: monospace; font-size: 12px;">
+                <strong>${payment.id}</strong>
+            </td>
+            <td>
+                <strong>${formatAmount(payment.amount)} ${payment.currency || 'KGS'}</strong>
+            </td>
+            <td>
+                <span class="badge ${getPaymentStatusBadgeClass(payment.status)}">${getPaymentStatusText(payment.status)}</span>
+            </td>
+            <td>${payment.qr_code_name || payment.qr_code_id || 'N/A'}</td>
+            <td>${formatDateTime(payment.created_at)}</td>
+            <td>
+                <div class="table-actions">
+                    <button class="btn-table primary" onclick="viewPaymentDetails(${payment.id})" title="Детали">👁️</button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+
+
+// Функции быстрых действий
+function createQuickQR() {
+    // Перенаправляем на страницу создания QR-кодов
+    window.location.href = '/merchant/qr-codes';
+}
+
+
+
+function viewPayments() {
+    window.location.href = '/merchant/payments';
+}
+
+function viewStatistics() {
+    window.location.href = '/merchant/statistics';
+}
+
+function viewAllPayments() {
+    window.location.href = '/merchant/payments';
+}
+
+async function viewPaymentDetails(paymentId) {
+    try {
+        const token = requireMerchantAuth();
+        if (!token) return;
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/merchant/payments/${paymentId}`), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка загрузки деталей платежа');
+        }
+        
+        const payment = await response.json();
+        showPaymentModal(payment);
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        showError('Ошибка загрузки деталей платежа: ' + error.message);
+    }
+}
+
+function showPaymentModal(payment) {
+    const modal = document.getElementById('payment-modal');
+    const detailsContainer = document.getElementById('payment-details');
+    
+    detailsContainer.innerHTML = `
+        <div style="display: grid; gap: 20px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div>
+                    <strong>ID платежа:</strong>
+                    <div style="font-family: monospace; background: var(--bg-tertiary); padding: 8px; border-radius: 6px; margin-top: 4px;">${payment.id}</div>
+                </div>
+                <div>
+                    <strong>Статус:</strong>
+                    <div style="margin-top: 4px;"><span class="badge ${getPaymentStatusBadgeClass(payment.status)}">${getPaymentStatusText(payment.status)}</span></div>
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                <div>
+                    <strong>Сумма:</strong>
+                    <div style="font-size: 18px; font-weight: bold; margin-top: 4px;">${formatAmount(payment.amount)} ${payment.currency || 'KGS'}</div>
+                </div>
+                <div>
+                    <strong>Дата создания:</strong>
+                    <div style="margin-top: 4px;">${formatDateTime(payment.created_at)}</div>
+                </div>
+            </div>
+            
+            ${payment.paid_at ? `
+            <div>
+                <strong>Дата оплаты:</strong>
+                <div style="margin-top: 4px;">${formatDateTime(payment.paid_at)}</div>
+            </div>
+            ` : ''}
+            
+            ${payment.payer_phone ? `
+            <div>
+                <strong>Телефон плательщика:</strong>
+                <div style="margin-top: 4px;">${payment.payer_phone}</div>
+            </div>
+            ` : ''}
+            
+            ${payment.payer_bank_code ? `
+            <div>
+                <strong>Банк плательщика:</strong>
+                <div style="margin-top: 4px;">${payment.payer_bank_code}</div>
+            </div>
+            ` : ''}
+            
+            ${payment.sender_account ? `
+            <div>
+                <strong>Счет плательщика:</strong>
+                <div style="font-family: monospace; background: var(--bg-tertiary); padding: 8px; border-radius: 6px; margin-top: 4px;">${payment.sender_account}</div>
+            </div>
+            ` : ''}
+            
+            ${payment.transaction_id ? `
+            <div>
+                <strong>ID транзакции:</strong>
+                <div style="font-family: monospace; background: var(--bg-tertiary); padding: 8px; border-radius: 6px; margin-top: 4px;">${payment.transaction_id}</div>
+            </div>
+            ` : ''}
+            
+            ${payment.bank_transaction_id ? `
+            <div>
+                <strong>ID банковской транзакции:</strong>
+                <div style="font-family: monospace; background: var(--bg-tertiary); padding: 8px; border-radius: 6px; margin-top: 4px;">${payment.bank_transaction_id}</div>
+            </div>
+            ` : ''}
+            
+            ${payment.qr_code_name ? `
+            <div>
+                <strong>QR-код:</strong>
+                <div style="margin-top: 4px;">${payment.qr_code_name}</div>
+            </div>
+            ` : ''}
+            
+            ${payment.error_message ? `
+            <div>
+                <strong>Ошибка:</strong>
+                <div style="color: #dc2626; background: #3f1d1d; padding: 12px; border-radius: 6px; margin-top: 4px;">${payment.error_message}</div>
+            </div>
+            ` : ''}
+        </div>
+    `;
+    
+    modal.style.display = 'flex';
+}
+
+function hidePaymentModal() {
+    document.getElementById('payment-modal').style.display = 'none';
+}
+
+// Утилиты
+function getPaymentStatusBadgeClass(status) {
+    const classes = {
+        'completed': 'ok',
+        'pending': 'warn',
+        'failed': 'err',
+        'cancelled': 'err'
+    };
+    return classes[status] || 'info';
+}
+
+function getPaymentStatusText(status) {
+    const texts = {
+        'completed': 'Завершен',
+        'pending': 'Ожидание',
+        'failed': 'Ошибка',
+        'cancelled': 'Отменен'
+    };
+    return texts[status] || status;
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleString('ru-RU');
+}
+
+
+
+function showError(message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error';
+    errorDiv.textContent = message;
+    document.querySelector('.content-area').insertBefore(errorDiv, document.querySelector('.content-area').firstChild);
+    
+    setTimeout(() => {
+        errorDiv.remove();
+    }, 5000);
+}
+
+
+</script>
+{% endblock %}

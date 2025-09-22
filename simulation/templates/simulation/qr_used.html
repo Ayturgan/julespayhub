@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR код уже использован - QRPayHub</title>
+    
+    <script>
+        // Глобальные переменные для URL
+        window.BASE_URL = "{{ BASE_URL }}";
+        window.SIMULATION_URL_TEMPLATE = "{{ SIMULATION_URL_TEMPLATE }}";
+    </script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .bg-gradient-used {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        }
+        .used-card {
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            border: 2px solid #f59e0b;
+        }
+        .used-icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 40px;
+            margin: 0 auto 20px;
+        }
+        .back-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            padding: 12px 30px;
+            font-size: 1.1em;
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+        .back-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+        }
+        .qr-details {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid #e9ecef;
+        }
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #495057;
+        }
+        .detail-value {
+            color: #6c757d;
+        }
+        .warning-badge {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+            display: inline-block;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-gradient-used">
+        <div class="container">
+            <a class="navbar-brand" href="/simulation">
+                <i class="fas fa-university me-2"></i>
+                QRPayHub - QR код уже использован
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/simulation">
+                    <i class="fas fa-arrow-left me-1"></i>
+                    Назад к симулятору
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card used-card">
+                    <div class="card-body text-center p-5">
+                        <div class="used-icon">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        
+                        <div class="warning-badge">
+                            <i class="fas fa-exclamation-circle me-2"></i>
+                            ВНИМАНИЕ
+                        </div>
+                        
+                        <h2 class="text-warning mb-3">QR код уже использован</h2>
+                        <p class="text-muted mb-4">
+                            Этот QR код уже был использован максимальное количество раз. 
+                            Создайте новый QR код для продолжения работы.
+                        </p>
+                        
+                        {% if qr_code %}
+                        <div class="qr-details">
+                            <h5 class="mb-3">
+                                <i class="fas fa-info-circle me-2"></i>
+                                Информация о QR коде
+                            </h5>
+                            
+                            <div class="detail-row">
+                                <span class="detail-label">Название:</span>
+                                <span class="detail-value">{{ qr_code.name or 'Не указано' }}</span>
+                            </div>
+                            
+                            <div class="detail-row">
+                                <span class="detail-label">Сумма:</span>
+                                <span class="detail-value">{{ qr_code.amount or 0 }} {{ qr_code.currency or 'KGS' }}</span>
+                            </div>
+                            
+                            <div class="detail-row">
+                                <span class="detail-label">Описание:</span>
+                                <span class="detail-value">{{ qr_code.description or 'Не указано' }}</span>
+                            </div>
+                            
+                            <div class="detail-row">
+                                <span class="detail-label">Создан:</span>
+                                <span class="detail-value">{{ qr_code.created_at.strftime('%d.%m.%Y, %H:%M') if qr_code.created_at else 'Не указано' }}</span>
+                            </div>
+                            
+                            <div class="detail-row">
+                                <span class="detail-label">Истекает:</span>
+                                <span class="detail-value">{{ qr_code.expires_at.strftime('%d.%m.%Y, %H:%M') if qr_code.expires_at else 'Не указано' }}</span>
+                            </div>
+                            
+                            <div class="detail-row">
+                                <span class="detail-label">Максимум использований:</span>
+                                <span class="detail-value text-warning">{{ qr_code.max_uses or 'Не ограничено' }}</span>
+                            </div>
+                            
+                            <div class="detail-row">
+                                <span class="detail-label">Текущих использований:</span>
+                                <span class="detail-value text-danger">{{ qr_code.current_uses or 0 }}</span>
+                            </div>
+                            
+                            {% if qr_code.merchant %}
+                            <div class="detail-row">
+                                <span class="detail-label">Продавец:</span>
+                                <span class="detail-value">{{ qr_code.merchant.name }}</span>
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+                        
+                        <div class="mt-4">
+                            <a href="/simulation" class="btn back-button text-white">
+                                <i class="fas fa-arrow-left me-2"></i>
+                                Вернуться к симулятору
+                            </a>
+                        </div>
+                        
+                        <div class="mt-3">
+                            <small class="text-muted">
+                                <i class="fas fa-info-circle me-1"></i>
+                                Для создания нового QR кода обратитесь к продавцу или создайте новый в панели управления
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

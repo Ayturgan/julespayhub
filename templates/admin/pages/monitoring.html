@@ -1,0 +1,206 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Мониторинг — QRPayHub{% endblock %}
+
+{% block content %}
+<div class="card" style="margin-bottom:12px;">
+    <h2>Live метрики</h2>
+    <div id="mon-summary" class="muted">Загрузка...</div>
+</div>
+<div class="card" style="margin-bottom:12px;">
+    <h2>Состояние банков</h2>
+    <div id="mon-banks" class="muted">Загрузка...</div>
+</div>
+<div class="grid cols-2">
+    <div class="card">
+        <h2>Воронка платежа</h2>
+        <div id="mon-funnel" class="muted">Загрузка...</div>
+    </div>
+    <div class="card">
+        <h2>ТОП продавцов</h2>
+        <div id="mon-merchants" class="muted">Загрузка...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadMonitoringData();
+});
+
+async function loadMonitoringData() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        
+        // Загружаем сводку
+        await loadSummary(token);
+        
+        // Загружаем состояние банков
+        await loadBanksStatus(token);
+        
+        // Загружаем воронку
+        await loadFunnel(token);
+        
+        // Загружаем топ продавцов
+        await loadTopMerchants(token);
+        
+    } catch (error) {
+        console.error('Ошибка загрузки мониторинга:', error);
+    }
+}
+
+async function loadSummary(token) {
+    try {
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/statistics?metric=monitoring_summary&period=24h`), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) throw new Error('Ошибка загрузки сводки');
+        
+        const data = await response.json();
+        displaySummary(data);
+    } catch (error) {
+        document.getElementById('mon-summary').innerHTML = '<div class="error">Ошибка загрузки</div>';
+    }
+}
+
+function displaySummary(data) {
+    // Получаем данные из правильной структуры ответа
+    const summary = data.summary || data;
+    const totalRequests = summary.total_requests || 0;
+    const successfulRequests = summary.successful_requests || 0;
+    const errorRequests = summary.error_requests || 0;
+    const successRate = totalRequests > 0 ? ((successfulRequests / totalRequests) * 100).toFixed(1) : 0;
+    
+    // Получаем количество активных банков и мерчантов
+    const activeBanks = data.active_banks || 0;
+    const activeMerchants = data.active_merchants || 0;
+    
+    const html = `
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px;">
+            <div style="text-align: center; padding: 16px; background: var(--bg-secondary); border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #3b82f6; margin-bottom: 4px;">${totalRequests}</div>
+                <div style="font-size: 12px; color: var(--text-secondary);">Всего транзакций</div>
+            </div>
+            <div style="text-align: center; padding: 16px; background: var(--bg-secondary); border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #10b981; margin-bottom: 4px;">${successfulRequests}</div>
+                <div style="font-size: 12px; color: var(--text-secondary);">Успешных</div>
+            </div>
+            <div style="text-align: center; padding: 16px; background: var(--bg-secondary); border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #f59e0b; margin-bottom: 4px;">${successRate}%</div>
+                <div style="font-size: 12px; color: var(--text-secondary);">Процент успеха</div>
+            </div>
+            <div style="text-align: center; padding: 16px; background: var(--bg-secondary); border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #06b6d4; margin-bottom: 4px;">${activeBanks}</div>
+                <div style="font-size: 12px; color: var(--text-secondary);">Активных банков</div>
+            </div>
+            <div style="text-align: center; padding: 16px; background: var(--bg-secondary); border-radius: 8px;">
+                <div style="font-size: 24px; font-weight: bold; color: #8b5cf6; margin-bottom: 4px;">${activeMerchants}</div>
+                <div style="font-size: 12px; color: var(--text-secondary);">Активных мерчантов</div>
+            </div>
+        </div>
+    `;
+    document.getElementById('mon-summary').innerHTML = html;
+}
+
+async function loadBanksStatus(token) {
+    try {
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/banks'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) throw new Error('Ошибка загрузки банков');
+        
+        const responseData = await response.json();
+        const banks = responseData.banks || responseData || [];
+        displayBanksStatus(banks);
+    } catch (error) {
+        document.getElementById('mon-banks').innerHTML = '<div class="error">Ошибка загрузки</div>';
+    }
+}
+
+function displayBanksStatus(banks) {
+    const html = banks.map(bank => {
+        const statusClass = bank.is_active ? 'ok' : 'err';
+        const statusText = bank.is_active ? 'Активен' : 'Неактивен';
+        
+        return `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
+                <div>
+                    <strong>${bank.name}</strong> (${bank.code})
+                </div>
+                <span class="badge ${statusClass}">${statusText}</span>
+            </div>
+        `;
+    }).join('');
+    
+    document.getElementById('mon-banks').innerHTML = html || '<div class="muted">Нет банков</div>';
+}
+
+async function loadFunnel(token, period, bank) {
+    // Заглушка для воронки платежа
+    const html = `
+        <div style="display: grid; gap: 8px;">
+            <div style="display: flex; justify-content: space-between;">
+                <span>QR создан</span>
+                <strong>100%</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span>Открыт в банке</span>
+                <strong>85%</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span>Подтвержден</span>
+                <strong>75%</strong>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+                <span>Успешно завершен</span>
+                <strong>70%</strong>
+            </div>
+        </div>
+    `;
+    document.getElementById('mon-funnel').innerHTML = html;
+}
+
+async function loadTopMerchants(token, period) {
+    try {
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/statistics?metric=top_merchants&period=24h`), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) throw new Error('Ошибка загрузки топа продавцов');
+        
+        const responseData = await response.json();
+        const merchants = responseData.top_merchants || responseData.merchants || responseData || [];
+        displayTopMerchants(merchants);
+    } catch (error) {
+        document.getElementById('mon-merchants').innerHTML = '<div class="error">Ошибка загрузки</div>';
+    }
+}
+
+function displayTopMerchants(merchants) {
+    if (!merchants || merchants.length === 0) {
+        document.getElementById('mon-merchants').innerHTML = '<div class="muted">Нет данных</div>';
+        return;
+    }
+    
+    const html = merchants.slice(0, 5).map((merchant, index) => {
+        return `
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border-color);">
+                <div>
+                    <span style="color: var(--text-secondary); margin-right: 8px;">${index + 1}.</span>
+                    <strong>${merchant.name}</strong>
+                </div>
+                <div style="text-align: right;">
+                    <div style="font-weight: 600;">${new Intl.NumberFormat('ru-RU').format(merchant.total_amount)} KGS</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">${merchant.total_payments || 0} транз.</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+    
+    document.getElementById('mon-merchants').innerHTML = html;
+}
+</script>
+{% endblock %}

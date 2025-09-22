@@ -1,0 +1,1683 @@
+# ОБНОВЛЕННАЯ ДОКУМЕНТАЦИЯ ВСЕХ ЭНДПОИНТОВ QRPayHub
+# (После рефакторинга - этапы 1-4 завершены)
+
+## ИЗМЕНЕНИЯ ПОСЛЕ РЕФАКТОРИНГА
+
+### УДАЛЕННЫЕ МОДУЛИ:
+- ❌ `/alerts` - все эндпоинты перенесены в `/admin/alerts`
+- ❌ `/mbank` - устаревшая интеграция удалена
+- ❌ `/qr` - дублирующий функционал удален
+
+### ОБЪЕДИНЕННЫЕ ЭНДПОИНТЫ:
+- ✅ `/admin/statistics` - единый эндпоинт для всех типов статистики
+- ✅ Все алерты теперь в `/admin/alerts`
+
+### УДАЛЕННЫЕ ТЕСТОВЫЕ ЭНДПОИНТЫ:
+- ❌ `/admin/validation/test-*` - тестовые эндпоинты удалены
+- ❌ `/admin/webhook/test-*` - тестовые эндпоинты удалены  
+- ❌ `/admin/qr/test-*` - тестовые эндпоинты удалены
+
+---
+
+## 1. ПЛАТЕЖНЫЕ ЭНДПОИНТЫ (/payment)
+
+### GET /api/v1/payment/payment-info
+**Описание:** Получение информации о платеже по токену
+**Функция:** Возвращает детали платежа, включая сумму, получателя, статус
+**Параметры:** 
+- `token` (query, string) - токен платежа
+**Ответ:**
+```json
+{
+  "payment_token": "string",
+  "amount": 1000.00,
+  "currency": "KZT",
+  "merchant_name": "string",
+  "status": "pending|paid|expired|cancelled",
+  "created_at": "2024-01-01T00:00:00Z",
+  "expires_at": "2024-01-01T01:00:00Z"
+}
+```
+
+### POST /api/v1/payment/payment-status
+**Описание:** Обновление статуса платежа (webhook от банка)
+**Функция:** Обрабатывает уведомления от банков о статусе платежа
+**Тело запроса:**
+```json
+{
+  "payment_token": "string",
+  "status": "success|failed|cancelled",
+  "transaction_id": "string",
+  "amount": 1000.00,
+  "signature": "string",
+  "timestamp": "2024-01-01T00:00:00Z"
+}
+```
+**Ответ:**
+```json
+{
+  "success": true,
+  "message": "Status updated successfully"
+}
+```
+
+### POST /api/v1/payment/two-phase-payment
+**Описание:** Двухфазная обработка платежа
+**Функция:** Выполняет платеж в две фазы: подготовка и подтверждение с идемпотентностью
+**Тело запроса:**
+```json
+{
+  "token": "qr_abc123def456",
+  "amount": 1000.00,
+  "currency": "KGS",
+  "payer_phone": "+996700123456",
+  "sender_account": "1234567890",
+  "payment_reference": "PAY-2024-001",
+  "idempotency_key": "idemp_abc123def456_20240101_120000"
+}
+```
+**Ответ:**
+```json
+{
+  "success": true,
+  "transaction_id": "2PC_qr_abc123def456_1704110400",
+  "status": "completed",
+  "message": "Two-phase transaction completed successfully",
+  "amount": 1000.00,
+  "currency": "KGS",
+  "requires_manual_intervention": false
+}
+```
+**Особенности:**
+- **Идемпотентность**: Повторные запросы с тем же `idempotency_key` возвращают кэшированный результат
+- **Валидация**: Проверка суммы, валюты и формата токена
+- **Транзакционная изоляция**: Атомарные операции с защитой от race conditions
+- **Мониторинг**: Полное логирование и отслеживание всех операций
+
+### GET /api/v1/payment/{payment_token}/logs
+**Описание:** Получение логов платежа
+**Функция:** Возвращает историю операций по конкретному платежу
+**Параметры:** 
+- `payment_token` (path, string) - токен платежа
+**Ответ:**
+```json
+{
+  "logs": [
+    {
+      "id": 1,
+      "action": "payment_created",
+      "timestamp": "2024-01-01T00:00:00Z",
+      "details": "string"
+    }
+  ]
+}
+```
+
+---
+
+## 2. МЕРЧАНТ ЭНДПОИНТЫ (/merchant)
+
+### POST /api/v1/merchant/register
+**Описание:** Регистрация нового продавца
+**Функция:** Создает нового продавца в системе
+**Тело запроса:**
+```json
+{
+  "name": "string",
+  "email": "string",
+  "phone": "string",
+  "password": "string",
+  "company_name": "string",
+  "tax_id": "string"
+}
+```
+**Ответ:**
+```json
+{
+  "merchant_id": 123,
+  "api_key": "string",
+  "status": "pending_verification"
+}
+```
+
+### POST /api/v1/merchant/login
+**Описание:** Авторизация продавца
+**Функция:** Аутентификация продавца и возврат токена
+**Тело запроса:**
+```json
+{
+  "email": "string",
+  "password": "string"
+}
+```
+**Ответ:**
+```json
+{
+  "access_token": "string",
+  "merchant_id": 123,
+  "expires_at": "2024-01-01T01:00:00Z"
+}
+```
+
+### POST /api/v1/merchant/qr-codes
+**Описание:** Создание динамического QR-кода для платежа
+**Функция:** Генерирует QR-код с фиксированной суммой для разового платежа
+**Тело запроса:**
+```json
+{
+  "amount": 1000.00,
+  "currency": "KZT",
+  "description": "string",
+  "expires_in_minutes": 60
+}
+```
+**Ответ:**
+```json
+{
+  "qr_code_id": 456,
+  "qr_code": "string",
+  "payment_token": "string",
+  "expires_at": "2024-01-01T01:00:00Z"
+}
+```
+
+**Примечание:** Для создания статичных QR-кодов (без фиксированной суммы) используйте эндпоинт `/merchant/outlets/{outlet_id}/qr`
+
+### GET /api/v1/merchant/qr-codes
+**Описание:** Список QR-кодов продавца
+**Функция:** Возвращает все QR-коды, созданные продавцом
+**Параметры:** 
+- `skip` (query, int, default: 0) - пропустить записей
+- `limit` (query, int, default: 10) - лимит записей
+**Ответ:**
+```json
+{
+  "qr_codes": [
+    {
+      "id": 456,
+      "amount": 1000.00,
+      "currency": "KZT",
+      "status": "active|expired|paid",
+      "created_at": "2024-01-01T00:00:00Z",
+      "expires_at": "2024-01-01T01:00:00Z"
+    }
+  ],
+  "total": 100,
+  "skip": 0,
+  "limit": 10
+}
+```
+
+### GET /api/v1/merchant/qr-codes/{qr_code_id}
+**Описание:** Детали конкретного QR-кода
+**Функция:** Возвращает детальную информацию о QR-коде
+**Параметры:**
+- `qr_code_id` (path, int) - ID QR-кода
+**Ответ:**
+```json
+{
+  "id": 456,
+  "amount": 1000.00,
+  "currency": "KZT",
+  "description": "string",
+  "status": "active|expired|paid",
+  "created_at": "2024-01-01T00:00:00Z",
+  "expires_at": "2024-01-01T01:00:00Z"
+}
+```
+
+### GET /api/v1/merchant/qr-codes/{qr_code_id}/stats
+**Описание:** Статистика QR-кода
+**Функция:** Возвращает статистику использования QR-кода
+**Параметры:**
+- `qr_code_id` (path, int) - ID QR-кода
+- `hours` (query, int, default: 24) - период в часах
+**Ответ:**
+```json
+{
+  "status": "success",
+  "data": {
+    "qr_code_id": 456,
+    "name": "string",
+    "hours": 24,
+    "payments_count": 15,
+    "total_amount": 25000.00
+  },
+  "timestamp": "2024-01-01T00:00:00Z"
+}
+```
+
+### GET /api/v1/merchant/payments
+**Описание:** Список платежей продавца
+**Функция:** Возвращает все платежи продавца с фильтрацией
+**Параметры:** 
+- `status` (query, string) - фильтр по статусу
+- `limit` (query, int, default: 50) - количество записей
+- `offset` (query, int, default: 0) - смещение
+- `date_from` (query, string) - дата от (ISO)
+- `date_to` (query, string) - дата до (ISO)
+- `min_amount` (query, float) - минимальная сумма
+- `max_amount` (query, float) - максимальная сумма
+- `qr_code_id` (query, int) - фильтр по QR-коду
+- `outlet_id` (query, int) - фильтр по торговой точке
+**Ответ:**
+```json
+{
+  "payments": [
+    {
+      "id": 789,
+      "amount": 1000.00,
+      "currency": "KZT",
+      "status": "paid",
+      "created_at": "2024-01-01T00:00:00Z",
+      "bank_code": "string"
+    }
+  ],
+  "total": 100,
+  "skip": 0,
+  "limit": 10
+}
+```
+
+### GET /api/v1/merchant/payments/export
+**Описание:** Экспорт платежей в CSV
+**Функция:** Экспортирует платежи в CSV формат
+**Параметры:**
+- `status` (query, string) - фильтр по статусу
+- `date_from` (query, string) - дата от
+- `date_to` (query, string) - дата до
+- `min_amount` (query, float) - минимальная сумма
+- `max_amount` (query, float) - максимальная сумма
+- `qr_code_id` (query, int) - фильтр по QR-коду
+- `outlet_id` (query, int) - фильтр по торговой точке
+**Ответ:** CSV файл с заголовком `Content-Disposition: attachment; filename=payments.csv`
+
+### GET /api/v1/merchant/payments/series
+**Описание:** Серия данных платежей для графиков
+**Функция:** Возвращает данные платежей по дням для построения графиков
+**Параметры:**
+- `days` (query, int, default: 7) - количество дней для серии
+**Ответ:**
+```json
+{
+  "series": [
+    {
+      "date": "2024-01-01",
+      "payments_count": 25,
+      "total_amount": 50000.00
+    }
+  ]
+}
+```
+
+### GET /api/v1/merchant/payments/{payment_id}
+**Описание:** Детали конкретного платежа
+**Функция:** Возвращает полную информацию о платеже
+**Параметры:**
+- `payment_id` (path, int) - ID платежа
+**Ответ:**
+```json
+{
+  "id": 789,
+  "amount": 1000.00,
+  "currency": "KZT",
+  "status": "paid",
+  "created_at": "2024-01-01T00:00:00Z",
+  "bank_code": "string",
+  "qr_code_id": 456,
+  "outlet_id": 123
+}
+```
+
+### GET /api/v1/merchant/stats
+**Описание:** Общая статистика продавца
+**Функция:** Возвращает общую статистику продавца
+**Параметры:** 
+- `period` (query, string, default: "7d") - период статистики
+**Ответ:**
+```json
+{
+  "total_payments": 100,
+  "successful_payments": 95,
+  "total_amount": 100000.00,
+  "success_rate": 95.0,
+  "period": "7d"
+}
+```
+
+### GET /api/v1/merchant/stats/quick
+**Описание:** Быстрая статистика для дашборда
+**Функция:** Возвращает краткую статистику для отображения на дашборде
+**Ответ:**
+```json
+{
+  "today_payments": 15,
+  "today_amount": 25000.00,
+  "week_payments": 85,
+  "week_amount": 150000.00,
+  "active_qr_codes": 5,
+  "total_qr_codes": 12
+}
+```
+
+### ТОРГОВЫЕ ТОЧКИ (ФИЛИАЛЫ) (/merchant/outlets)
+
+#### POST /api/v1/merchant/outlets
+**Описание:** Создание торговой точки (филиала)
+**Функция:** Создает новую торговую точку для продавца с возможностью генерации статичных QR-кодов
+**Тело запроса:**
+```json
+{
+  "name": "string",
+  "address": "string"
+}
+```
+**Ответ:**
+```json
+{
+  "id": 456,
+  "merchant_id": 123,
+  "name": "Магазин на Чуй",
+  "address": "ул. Чуй 123, Бишкек",
+  "status": "ACTIVE",
+  "created_at": "2024-01-01T00:00:00Z",
+  "updated_at": "2024-01-01T00:00:00Z"
+}
+```
+
+#### GET /api/v1/merchant/outlets
+**Описание:** Список торговых точек
+**Функция:** Возвращает все торговые точки продавца
+**Ответ:**
+```json
+[
+  {
+    "id": 456,
+    "merchant_id": 123,
+    "name": "Магазин на Чуй",
+    "address": "ул. Чуй 123, Бишкек",
+    "status": "ACTIVE",
+    "created_at": "2024-01-01T00:00:00Z",
+    "updated_at": "2024-01-01T00:00:00Z"
+  }
+]
+```
+
+#### PUT /api/v1/merchant/outlets/{outlet_id}
+**Описание:** Обновление торговой точки
+**Функция:** Обновляет данные торговой точки
+**Параметры:**
+- `outlet_id` (path, int) - ID торговой точки
+**Тело запроса:**
+```json
+{
+  "name": "string",
+  "address": "string"
+}
+```
+**Ответ:**
+```json
+{
+  "id": 456,
+  "merchant_id": 123,
+  "name": "Обновленное название",
+  "address": "Новый адрес",
+  "status": "ACTIVE",
+  "created_at": "2024-01-01T00:00:00Z",
+  "updated_at": "2024-01-01T01:00:00Z"
+}
+```
+
+#### POST /api/v1/merchant/outlets/{outlet_id}/archive
+**Описание:** Архивирование торговой точки
+**Функция:** Переводит торговую точку в архив и деактивирует связанные QR-коды
+**Параметры:**
+- `outlet_id` (path, int) - ID торговой точки
+**Ответ:**
+```json
+{
+  "status": "success",
+  "message": "Outlet archived"
+}
+```
+
+#### POST /api/v1/merchant/outlets/{outlet_id}/activate
+**Описание:** Активация торговой точки
+**Функция:** Активирует торговую точку
+**Параметры:**
+- `outlet_id` (path, int) - ID торговой точки
+**Ответ:**
+```json
+{
+  "status": "success",
+  "message": "Outlet activated"
+}
+```
+
+#### GET /api/v1/merchant/outlets/{outlet_id}/qr
+**Описание:** Генерация статичного QR-кода для торговой точки
+**Функция:** Создает статичный QR-код для торговой точки (без фиксированной суммы)
+**Параметры:**
+- `outlet_id` (path, int) - ID торговой точки
+- `format` (query, string, default: "png") - формат изображения: png|svg
+**Ответ:**
+```json
+{
+  "status": "success",
+  "data": {
+    "qr_url": "https://qrpayhub.com/pay?token=abc123",
+    "image_data_uri": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA...",
+    "format": "png"
+  },
+  "timestamp": "2024-01-01T00:00:00Z"
+}
+```
+
+#### GET /api/v1/merchant/outlets/{outlet_id}/stats
+**Описание:** Статистика торговой точки
+**Функция:** Возвращает статистику платежей по торговой точке
+**Параметры:**
+- `outlet_id` (path, int) - ID торговой точки
+- `hours` (query, int, default: 24) - период в часах
+**Ответ:**
+```json
+{
+  "status": "success",
+  "data": {
+    "outlet_id": 456,
+    "outlet_name": "Магазин на Чуй",
+    "hours": 24,
+    "payments_count": 15,
+    "total_amount": 25000.00,
+    "avg_amount": 1666.67
+  },
+  "timestamp": "2024-01-01T00:00:00Z"
+}
+```
+
+#### GET /api/v1/merchant/outlets/distribution
+**Описание:** Распределение оборота по торговым точкам
+**Функция:** Возвращает распределение платежей по всем торговым точкам
+**Параметры:**
+- `days` (query, int, default: 7) - период в днях
+**Ответ:**
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "outlet_id": 456,
+      "outlet_name": "Магазин на Чуй",
+      "payments_count": 25,
+      "total_amount": 50000.00
+    },
+    {
+      "outlet_id": 457,
+      "outlet_name": "Магазин на Советской",
+      "payments_count": 18,
+      "total_amount": 35000.00
+    }
+  ],
+  "total_amount": 85000.00,
+  "timestamp": "2024-01-01T00:00:00Z"
+}
+```
+
+### НАСТРОЙКИ (/merchant/settings)
+
+#### GET /api/v1/merchant/settings
+**Описание:** Настройки продавца
+**Функция:** Возвращает настройки продавца
+**Ответ:**
+```json
+{
+  "id": 123,
+  "merchant_id": 456,
+  "notification_email": "merchant@example.com",
+  "notification_phone": "+996700123456",
+  "auto_confirm_payments": true,
+  "daily_limit": 1000000.00,
+  "monthly_limit": 10000000.00,
+  "created_at": "2024-01-01T00:00:00Z",
+  "updated_at": "2024-01-01T00:00:00Z"
+}
+```
+
+#### PUT /api/v1/merchant/settings
+**Описание:** Обновление настроек продавца
+**Функция:** Обновляет настройки продавца
+**Тело запроса:**
+```json
+{
+  "notification_email": "new@example.com",
+  "notification_phone": "+996700654321",
+  "auto_confirm_payments": false,
+  "daily_limit": 500000.00,
+  "monthly_limit": 5000000.00
+}
+```
+**Ответ:**
+```json
+{
+  "id": 123,
+  "merchant_id": 456,
+  "notification_email": "new@example.com",
+  "notification_phone": "+996700654321",
+  "auto_confirm_payments": false,
+  "daily_limit": 500000.00,
+  "monthly_limit": 5000000.00,
+  "created_at": "2024-01-01T00:00:00Z",
+  "updated_at": "2024-01-01T01:00:00Z"
+}
+```
+
+### ПРОФИЛЬ (/merchant/profile)
+
+#### GET /api/v1/merchant/profile
+**Описание:** Профиль продавца
+**Функция:** Возвращает профиль продавца
+**Ответ:**
+```json
+{
+  "id": 456,
+  "name": "Test Merchant",
+  "email": "merchant@example.com",
+  "phone": "+996700123456",
+  "company_name": "Test Company",
+  "inn": "123456789012",
+  "is_active": true,
+  "is_verified": true,
+  "created_at": "2024-01-01T00:00:00Z"
+}
+```
+
+#### PUT /api/v1/merchant/profile
+**Описание:** Обновление профиля продавца
+**Функция:** Обновляет профиль продавца
+**Тело запроса:**
+```json
+{
+  "name": "Updated Name",
+  "email": "new@example.com",
+  "phone": "+996700654321",
+  "company_name": "Updated Company",
+  "inn": "987654321098"
+}
+```
+**Ответ:**
+```json
+{
+  "id": 456,
+  "name": "Updated Name",
+  "email": "new@example.com",
+  "phone": "+996700654321",
+  "company_name": "Updated Company",
+  "inn": "987654321098",
+  "is_active": true,
+  "is_verified": true,
+  "created_at": "2024-01-01T00:00:00Z",
+  "updated_at": "2024-01-01T01:00:00Z"
+}
+```
+
+### БАНКИ (/merchant/banks)
+
+#### GET /api/v1/merchant/banks
+**Описание:** Список доступных банков
+**Функция:** Возвращает список банков для интеграции
+**Ответ:**
+```json
+[
+  {
+    "code": "TEST_BANK",
+    "name": "Test Bank",
+    "bik": "123456789"
+  }
+]
+```
+
+---
+
+## 3. АДМИН ЭНДПОИНТЫ (/admin)
+
+### ЕДИНЫЙ СТАТИСТИЧЕСКИЙ ЭНДПОИНТ (/admin/statistics)
+
+#### GET /api/v1/admin/statistics/statistics
+**Описание:** Единый эндпоинт для получения всех типов статистики
+**Функция:** Возвращает различные типы статистики в зависимости от параметров
+**Параметры:**
+- `metric` (query, required) - тип метрики:
+  - `dashboard` - статистика для дашборда
+  - `merchant_quick` - быстрая статистика продавца
+  - `merchants_overview` - обзор всех продавцов
+  - `admin_summary` - сводка для админа
+  - `system` - системная статистика
+  - `dashboard_full` - полная сводка дашборда
+  - `audit_summary` - сводка аудита
+  - `top_merchants` - топ продавцов
+  - `monitoring_summary` - сводка мониторинга
+  - `bank_stats` - статистика по банкам
+- `period` (query, default: "7d") - период:
+  - `1h`, `24h`, `7d`, `30d`, `month`, `year`
+- `merchant_id` (query) - ID продавца для merchant_quick
+- `bank_code` (query) - код банка для bank_stats
+- `limit` (query, default: 10) - лимит для top_merchants
+
+**Примеры ответов:**
+
+**Для metric=dashboard:**
+```json
+{
+  "active_banks": 5,
+  "period_payments": 1000,
+  "successful_payments": 950,
+  "success_rate": 95.0,
+  "active_merchants": 50,
+  "period": "2024-01-01T00:00:00Z"
+}
+```
+
+**Для metric=merchant_quick:**
+```json
+{
+  "merchant_id": 123,
+  "merchant_name": "Test Merchant",
+  "total_payments": 100,
+  "successful_payments": 95,
+  "success_rate": 95.0,
+  "total_amount": 100000.00,
+  "period": "2024-01-01T00:00:00Z"
+}
+```
+
+**Для metric=bank_stats:**
+```json
+{
+  "bank_stats": [
+    {
+      "bank_code": "TEST_BANK",
+      "bank_name": "Test Bank",
+      "status": "OK",
+      "avg_response_ms": 150,
+      "errors": 5,
+      "successful_payments": 100
+    }
+  ],
+  "period": "2024-01-01T00:00:00Z"
+}
+```
+
+### ПЛАТЕЖИ (/admin/payments)
+
+#### POST /api/v1/admin/payments/create-payment
+**Описание:** Создание платежа администратором
+**Функция:** Создает платеж с расширенной валидацией
+**Тело запроса:**
+```json
+{
+  "merchant_id": 123,
+  "amount": 1000.00,
+  "currency": "KZT",
+  "description": "string",
+  "bank_code": "string",
+  "reference": "string"
+}
+```
+**Ответ:**
+```json
+{
+  "payment_token": "string",
+  "qr_code": "string",
+  "status": "created",
+  "expires_at": "2024-01-01T01:00:00Z"
+}
+```
+
+#### GET /api/v1/admin/payments/payments
+**Описание:** Список всех платежей
+**Функция:** Возвращает список всех платежей в системе
+**Параметры:**
+- `skip` (query, int, default: 0)
+- `limit` (query, int, default: 10)
+- `status` (query, string)
+- `merchant_id` (query, int)
+**Ответ:**
+```json
+{
+  "payments": [
+    {
+      "id": 789,
+      "payment_token": "string",
+      "amount": 1000.00,
+      "currency": "KZT",
+      "merchant_name": "string",
+      "status": "paid",
+      "created_at": "2024-01-01T00:00:00Z",
+      "bank_code": "string"
+    }
+  ],
+  "total": 1000,
+  "skip": 0,
+  "limit": 10
+}
+```
+
+#### GET /api/v1/admin/payments/qr-image/{token}
+**Описание:** Получение изображения QR-кода
+**Функция:** Возвращает изображение QR-кода по токену
+**Параметры:**
+- `token` (path, string) - токен платежа
+**Ответ:** Изображение QR-кода (PNG/SVG)
+
+#### GET /api/v1/admin/payments/payment/{token}
+**Описание:** Детали платежа
+**Функция:** Возвращает детальную информацию о платеже
+**Параметры:**
+- `token` (path, string) - токен платежа
+**Ответ:**
+```json
+{
+  "id": 789,
+  "payment_token": "string",
+  "amount": 1000.00,
+  "currency": "KZT",
+  "merchant_name": "string",
+  "status": "paid",
+  "created_at": "2024-01-01T00:00:00Z",
+  "bank_code": "string",
+  "receiver_account": "string",
+  "description": "string"
+}
+```
+
+#### GET /api/v1/admin/payments/payments/recent
+**Описание:** Последние платежи
+**Функция:** Возвращает последние платежи с реальными суммами
+**Параметры:**
+- `limit` (query, int, default: 10) - количество записей
+**Ответ:**
+```json
+{
+  "payments": [
+    {
+      "id": 789,
+      "amount": 1000.00,
+      "currency": "KZT",
+      "merchant_name": "string",
+      "status": "paid",
+      "created_at": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "total": 10
+}
+```
+
+### БАНКИ (/admin/banks)
+
+#### POST /api/v1/admin/banks/banks
+**Описание:** Создание нового банка
+**Функция:** Создает нового банка-партнера
+**Тело запроса:**
+```json
+{
+  "name": "string",
+  "code": "string",
+  "api_url": "string",
+  "webhook_url": "string",
+  "is_active": true
+}
+```
+**Ответ:**
+```json
+{
+  "bank_id": 456,
+  "access_token": "string",
+  "hmac_secret": "string",
+  "status": "active"
+}
+```
+
+#### GET /api/v1/admin/banks/banks
+**Описание:** Список всех банков
+**Функция:** Возвращает список всех банков
+**Ответ:**
+```json
+{
+  "banks": [
+    {
+      "id": 456,
+      "name": "Test Bank",
+      "code": "TEST_BANK",
+      "is_active": true,
+      "created_at": "2024-01-01T00:00:00Z"
+    }
+  ]
+}
+```
+
+#### PUT /api/v1/admin/banks/banks/{bank_id}/toggle-active
+**Описание:** Переключение активности банка
+**Функция:** Включает/отключает банк
+**Параметры:**
+- `bank_id` (path, int) - ID банка
+**Ответ:**
+```json
+{
+  "success": true,
+  "is_active": true,
+  "message": "Bank status updated"
+}
+```
+
+#### POST /api/v1/admin/banks/banks/{bank_id}/regenerate-keys
+**Описание:** Перевыпуск ключей банка
+**Функция:** Генерирует новые access_token и hmac_secret
+**Параметры:**
+- `bank_id` (path, int) - ID банка
+**Ответ:**
+```json
+{
+  "success": true,
+  "access_token": "new_token",
+  "hmac_secret": "new_secret",
+  "message": "Keys regenerated successfully"
+}
+```
+
+#### PUT /api/v1/admin/banks/banks/{bank_id}/settings
+**Описание:** Обновление настроек банка
+**Функция:** Обновляет настройки банка
+**Параметры:**
+- `bank_id` (path, int) - ID банка
+**Тело запроса:**
+```json
+{
+  "api_url": "string",
+  "webhook_url": "string",
+  "timeout_seconds": 30,
+  "retry_count": 3
+}
+```
+**Ответ:**
+```json
+{
+  "success": true,
+  "message": "Bank settings updated"
+}
+```
+
+#### PUT /api/v1/admin/banks/banks/{bank_id}/toggle
+**Описание:** Переключение статуса банка
+**Функция:** Включает/отключает банк
+**Параметры:**
+- `bank_id` (path, int) - ID банка
+**Ответ:**
+```json
+{
+  "success": true,
+  "is_active": true,
+  "message": "Bank status updated"
+}
+```
+
+### ПРОДАВЦЫ (/admin/merchants)
+
+#### GET /api/v1/admin/merchants/merchants
+**Описание:** Список всех продавцов
+**Функция:** Возвращает список всех продавцов
+**Параметры:**
+- `skip` (query, int, default: 0)
+- `limit` (query, int, default: 10)
+- `status` (query, string)
+- `verified` (query, bool)
+**Ответ:**
+```json
+{
+  "merchants": [
+    {
+      "id": 123,
+      "name": "Test Merchant",
+      "email": "string",
+      "is_active": true,
+      "is_verified": true,
+      "created_at": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "total": 100,
+  "skip": 0,
+  "limit": 10
+}
+```
+
+#### PUT /api/v1/admin/merchants/merchants/{merchant_id}/toggle-status
+**Описание:** Переключение статуса продавца
+**Функция:** Активирует/деактивирует продавца
+**Параметры:**
+- `merchant_id` (path, int) - ID продавца
+**Ответ:**
+```json
+{
+  "success": true,
+  "is_active": true,
+  "message": "Merchant status updated"
+}
+```
+
+#### DELETE /api/v1/admin/merchants/merchants/{merchant_id}
+**Описание:** Удаление продавца
+**Функция:** Удаляет продавца из системы
+**Параметры:**
+- `merchant_id` (path, int) - ID продавца
+**Ответ:**
+```json
+{
+  "success": true,
+  "message": "Merchant deleted successfully"
+}
+```
+
+#### PUT /api/v1/admin/merchants/merchants/{merchant_id}/verify
+**Описание:** Верификация продавца
+**Функция:** Верифицирует/снимает верификацию продавца
+**Параметры:**
+- `merchant_id` (path, int) - ID продавца
+**Ответ:**
+```json
+{
+  "success": true,
+  "is_verified": true,
+  "message": "Merchant verification updated"
+}
+```
+
+#### PUT /api/v1/admin/merchants/merchants/{merchant_id}/limits
+**Описание:** Обновление лимитов продавца
+**Функция:** Обновляет дневные и месячные лимиты
+**Параметры:**
+- `merchant_id` (path, int) - ID продавца
+**Тело запроса:**
+```json
+{
+  "daily_limit": 1000000.00,
+  "monthly_limit": 10000000.00
+}
+```
+**Ответ:**
+```json
+{
+  "success": true,
+  "message": "Merchant limits updated"
+}
+```
+
+#### DELETE /api/v1/admin/merchants/merchants/{merchant_id}/force
+**Описание:** Принудительное удаление продавца
+**Функция:** Принудительно удаляет продавца и все данные
+**Параметры:**
+- `merchant_id` (path, int) - ID продавца
+**Ответ:**
+```json
+{
+  "success": true,
+  "message": "Merchant force deleted"
+}
+```
+
+#### GET /api/v1/admin/merchants/merchants/{merchant_id}/stats
+**Описание:** Статистика продавца
+**Функция:** Возвращает статистику продавца
+**Параметры:**
+- `merchant_id` (path, int) - ID продавца
+**Ответ:**
+```json
+{
+  "merchant_id": 123,
+  "total_payments": 100,
+  "successful_payments": 95,
+  "total_amount": 1000000.00,
+  "success_rate": 95.0,
+  "active_qr_codes": 5,
+  "total_qr_codes": 12
+}
+```
+
+#### GET /api/v1/admin/merchants/merchants/{merchant_id}/payments
+**Описание:** Платежи продавца
+**Функция:** Возвращает все платежи продавца
+**Параметры:**
+- `merchant_id` (path, int) - ID продавца
+- `limit` (query, int, default: 50) - количество записей
+- `offset` (query, int, default: 0) - смещение
+**Ответ:**
+```json
+{
+  "payments": [
+    {
+      "id": 789,
+      "amount": 1000.00,
+      "currency": "KZT",
+      "status": "paid",
+      "created_at": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "total": 100,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+#### GET /api/v1/admin/merchants/merchants/{merchant_id}/qr-codes
+**Описание:** QR-коды продавца
+**Функция:** Возвращает все QR-коды продавца
+**Параметры:**
+- `merchant_id` (path, int) - ID продавца
+**Ответ:**
+```json
+[
+  {
+    "id": 456,
+    "amount": 1000.00,
+    "currency": "KZT",
+    "status": "active",
+    "created_at": "2024-01-01T00:00:00Z"
+  }
+]
+```
+
+#### GET /api/v1/admin/merchants/merchants/{merchant_id}/qr-stats
+**Описание:** Статистика QR-кодов продавца
+**Функция:** Возвращает статистику QR-кодов
+**Параметры:**
+- `merchant_id` (path, int) - ID продавца
+**Ответ:**
+```json
+{
+  "total_qr_codes": 12,
+  "active_qr_codes": 5,
+  "expired_qr_codes": 3,
+  "used_qr_codes": 4
+}
+```
+
+#### POST /api/v1/admin/merchants/merchants/{merchant_id}/regenerate-api-key
+**Описание:** Перевыпуск API ключа
+**Функция:** Генерирует новый API ключ для продавца
+**Параметры:**
+- `merchant_id` (path, int) - ID продавца
+**Ответ:**
+```json
+{
+  "success": true,
+  "api_key": "new_api_key",
+  "message": "API key regenerated"
+}
+```
+
+#### GET /api/v1/admin/merchants/merchants/stats/overview
+**Описание:** Обзор статистики продавцов
+**Функция:** Возвращает общую статистику по всем продавцам
+**Ответ:**
+```json
+{
+  "total_merchants": 100,
+  "active_merchants": 85,
+  "verified_merchants": 70,
+  "total_payments": 5000,
+  "total_amount": 50000000.00
+}
+```
+
+### АЛЕРТЫ (/admin/alerts)
+
+#### GET /api/v1/admin/alerts/alerts
+**Описание:** Список алертов
+**Функция:** Возвращает список алертов с фильтрацией
+**Параметры:**
+- `skip` (query, int, default: 0)
+- `limit` (query, int, default: 10)
+- `status` (query, string) - pending|acknowledged|resolved
+- `severity` (query, string) - low|medium|high|critical
+**Ответ:**
+```json
+{
+  "alerts": [
+    {
+      "id": 789,
+      "title": "string",
+      "message": "string",
+      "severity": "high",
+      "status": "pending",
+      "created_at": "2024-01-01T00:00:00Z",
+      "acknowledged_at": null,
+      "resolved_at": null
+    }
+  ],
+  "total": 50,
+  "skip": 0,
+  "limit": 10
+}
+```
+
+#### POST /api/v1/admin/alerts/alerts/{alert_id}/acknowledge
+**Описание:** Принятие алерта
+**Функция:** Отмечает алерт как принятый
+**Параметры:**
+- `alert_id` (path, int) - ID алерта
+**Ответ:**
+```json
+{
+  "success": true,
+  "message": "Alert acknowledged"
+}
+```
+
+#### POST /api/v1/admin/alerts/alerts/{alert_id}/resolve
+**Описание:** Закрытие алерта
+**Функция:** Закрывает алерт
+**Параметры:**
+- `alert_id` (path, int) - ID алерта
+**Ответ:**
+```json
+{
+  "success": true,
+  "message": "Alert resolved"
+}
+```
+
+#### POST /api/v1/admin/alerts/alerts/create
+**Описание:** Создание алерта
+**Функция:** Создает новый алерт
+**Тело запроса:**
+```json
+{
+  "title": "string",
+  "message": "string",
+  "severity": "low|medium|high|critical",
+  "category": "string",
+  "bank_code": "string"
+}
+```
+**Ответ:**
+```json
+{
+  "alert_id": 789,
+  "success": true,
+  "message": "Alert created"
+}
+```
+
+### АУДИТ (/admin/audit)
+
+#### GET /api/v1/admin/audit/logs
+**Описание:** Логи API
+**Функция:** Возвращает логи обращений к API
+**Параметры:**
+- `skip` (query, int, default: 0)
+- `limit` (query, int, default: 10)
+- `bank_code` (query, string)
+- `has_error` (query, bool)
+**Ответ:**
+```json
+{
+  "logs": [
+    {
+      "id": 123,
+      "bank_code": "TEST_BANK",
+      "endpoint": "string",
+      "method": "POST",
+      "status_code": 200,
+      "request_duration_ms": 150,
+      "error_message": null,
+      "created_at": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "total": 1000,
+  "skip": 0,
+  "limit": 10
+}
+```
+
+### СИСТЕМА (/admin/system)
+
+#### GET /api/v1/admin/system/settings
+**Описание:** Настройки системы
+**Функция:** Возвращает настройки системы
+**Ответ:**
+```json
+{
+  "system_settings": {
+    "maintenance_mode": false,
+    "rate_limit_per_minute": 100,
+    "max_payment_amount": 1000000.00,
+    "min_payment_amount": 1.00
+  },
+  "alert_settings": {
+    "email_enabled": true,
+    "telegram_enabled": false,
+    "sms_enabled": false
+  }
+}
+```
+
+#### PUT /api/v1/admin/system/settings/system
+**Описание:** Обновление системных настроек
+**Функция:** Обновляет системные настройки
+**Тело запроса:**
+```json
+{
+  "maintenance_mode": false,
+  "rate_limit_per_minute": 100,
+  "max_payment_amount": 1000000.00,
+  "min_payment_amount": 1.00
+}
+```
+**Ответ:**
+```json
+{
+  "success": true,
+  "message": "System settings updated"
+}
+```
+
+---
+
+## 4. АДМИН АУТЕНТИФИКАЦИЯ (/admin-auth)
+
+### POST /api/v1/admin-auth/login
+**Описание:** Авторизация администратора
+**Функция:** Аутентифицирует администратора
+**Тело запроса:**
+```json
+{
+  "username": "string",
+  "password": "string"
+}
+```
+**Ответ:**
+```json
+{
+  "access_token": "string",
+  "admin_id": 123,
+  "username": "string",
+  "expires_at": "2024-01-01T01:00:00Z"
+}
+```
+
+### GET /api/v1/admin-auth/me
+**Описание:** Профиль текущего администратора
+**Функция:** Возвращает профиль текущего администратора
+**Ответ:**
+```json
+{
+  "admin_id": 123,
+  "username": "string",
+  "email": "string",
+  "role": "admin|super_admin",
+  "created_at": "2024-01-01T00:00:00Z"
+}
+```
+
+### POST /api/v1/admin-auth/me/change-password
+**Описание:** Смена пароля
+**Функция:** Изменяет пароль администратора
+**Тело запроса:**
+```json
+{
+  "current_password": "string",
+  "new_password": "string"
+}
+```
+**Ответ:**
+```json
+{
+  "success": true,
+  "message": "Password changed successfully"
+}
+```
+
+### POST /api/v1/admin-auth/register
+**Описание:** Регистрация администратора
+**Функция:** Регистрирует нового администратора
+**Тело запроса:**
+```json
+{
+  "username": "string",
+  "email": "string",
+  "password": "string",
+  "role": "admin|super_admin"
+}
+```
+**Ответ:**
+```json
+{
+  "id": 123,
+  "username": "string",
+  "email": "string",
+  "role": "admin",
+  "created_at": "2024-01-01T00:00:00Z"
+}
+```
+
+### GET /api/v1/admin-auth/admins
+**Описание:** Список администраторов
+**Функция:** Возвращает список всех администраторов
+**Ответ:**
+```json
+[
+  {
+    "id": 123,
+    "username": "string",
+    "email": "string",
+    "role": "admin",
+    "created_at": "2024-01-01T00:00:00Z"
+  }
+]
+```
+
+### GET /api/v1/admin-auth/admins/{admin_id}
+**Описание:** Детали администратора
+**Функция:** Возвращает детали администратора
+**Параметры:**
+- `admin_id` (path, int) - ID администратора
+**Ответ:**
+```json
+{
+  "id": 123,
+  "username": "string",
+  "email": "string",
+  "role": "admin",
+  "created_at": "2024-01-01T00:00:00Z"
+}
+```
+
+### PUT /api/v1/admin-auth/admins/{admin_id}
+**Описание:** Обновление администратора
+**Функция:** Обновляет данные администратора
+**Параметры:**
+- `admin_id` (path, int) - ID администратора
+**Тело запроса:**
+```json
+{
+  "username": "string",
+  "email": "string",
+  "role": "admin|super_admin"
+}
+```
+**Ответ:**
+```json
+{
+  "id": 123,
+  "username": "string",
+  "email": "string",
+  "role": "admin",
+  "created_at": "2024-01-01T00:00:00Z",
+  "updated_at": "2024-01-01T01:00:00Z"
+}
+```
+
+### DELETE /api/v1/admin-auth/admins/{admin_id}
+**Описание:** Удаление администратора
+**Функция:** Удаляет администратора
+**Параметры:**
+- `admin_id` (path, int) - ID администратора
+**Ответ:**
+```json
+{
+  "success": true,
+  "message": "Admin deleted successfully"
+}
+```
+
+---
+
+## 5. МОНИТОРИНГ (/monitoring)
+
+### GET /api/v1/monitoring/current-metrics
+**Описание:** Текущие метрики
+**Функция:** Возвращает текущие метрики системы
+**Ответ:**
+```json
+{
+  "active_connections": 25,
+  "requests_per_second": 12.5,
+  "error_rate": 0.5,
+  "avg_response_time_ms": 120,
+  "system_status": "healthy"
+}
+```
+
+### GET /api/v1/monitoring/system-health
+**Описание:** Здоровье системы
+**Функция:** Возвращает состояние здоровья системы
+**Ответ:**
+```json
+{
+  "status": "healthy|warning|critical",
+  "checks": {
+    "database": "healthy",
+    "redis": "healthy",
+    "external_apis": "healthy"
+  },
+  "last_check": "2024-01-01T00:00:00Z"
+}
+```
+
+### GET /api/v1/monitoring/bank-status/{bank_code}
+**Описание:** Статус банка
+**Функция:** Возвращает статус банка
+**Параметры:**
+- `bank_code` (path, string) - код банка
+**Ответ:**
+```json
+{
+  "bank_code": "TEST_BANK",
+  "status": "active|inactive|error",
+  "last_response_time_ms": 150,
+  "error_count": 5,
+  "last_successful_request": "2024-01-01T00:00:00Z"
+}
+```
+
+### GET /api/v1/monitoring/recent-events
+**Описание:** Последние события
+**Функция:** Возвращает последние события системы
+**Параметры:**
+- `limit` (query, int, default: 20) - количество событий
+**Ответ:**
+```json
+{
+  "events": [
+    {
+      "id": 123,
+      "type": "payment_created",
+      "message": "Payment created",
+      "timestamp": "2024-01-01T00:00:00Z",
+      "severity": "info"
+    }
+  ]
+}
+```
+
+### GET /api/v1/monitoring/performance-trends
+**Описание:** Тренды производительности
+**Функция:** Возвращает тренды производительности системы
+**Параметры:**
+- `period` (query, string, default: "24h") - период
+**Ответ:**
+```json
+{
+  "trends": [
+    {
+      "timestamp": "2024-01-01T00:00:00Z",
+      "response_time_ms": 120,
+      "requests_per_second": 15.5,
+      "error_rate": 0.5
+    }
+  ]
+}
+```
+
+### GET /api/v1/monitoring/dashboard-data
+**Описание:** Данные дашборда
+**Функция:** Возвращает данные для дашборда мониторинга
+**Ответ:**
+```json
+{
+  "system_health": "healthy",
+  "active_connections": 25,
+  "requests_per_second": 12.5,
+  "error_rate": 0.5,
+  "avg_response_time_ms": 120
+}
+```
+
+### GET /api/v1/monitoring/thresholds
+**Описание:** Пороги мониторинга
+**Функция:** Возвращает пороги мониторинга
+**Ответ:**
+```json
+{
+  "response_time_ms": 500,
+  "error_rate_percent": 5.0,
+  "requests_per_second": 100
+}
+```
+
+### PUT /api/v1/monitoring/thresholds
+**Описание:** Обновление порогов
+**Функция:** Обновляет пороги мониторинга
+**Тело запроса:**
+```json
+{
+  "response_time_ms": 500,
+  "error_rate_percent": 5.0,
+  "requests_per_second": 100
+}
+```
+**Ответ:**
+```json
+{
+  "success": true,
+  "message": "Thresholds updated"
+}
+```
+
+### GET /api/v1/monitoring/bank-health/{bank_code}
+**Описание:** Здоровье банка
+**Функция:** Возвращает состояние здоровья банка
+**Параметры:**
+- `bank_code` (path, string) - код банка
+**Ответ:**
+```json
+{
+  "bank_code": "TEST_BANK",
+  "status": "healthy|warning|critical",
+  "last_response_time_ms": 150,
+  "error_count": 5,
+  "success_rate": 95.5
+}
+```
+
+### GET /api/v1/monitoring/banks-health
+**Описание:** Здоровье всех банков
+**Функция:** Возвращает состояние здоровья всех банков
+**Ответ:**
+```json
+{
+  "banks": [
+    {
+      "bank_code": "TEST_BANK",
+      "status": "healthy",
+      "last_response_time_ms": 150,
+      "error_count": 5
+    }
+  ]
+}
+```
+
+### GET /api/v1/monitoring/business-funnel
+**Описание:** Бизнес-воронка
+**Функция:** Возвращает данные бизнес-воронки
+**Ответ:**
+```json
+{
+  "funnel": {
+    "qr_codes_created": 1000,
+    "qr_codes_scanned": 800,
+    "payments_initiated": 600,
+    "payments_completed": 500
+  }
+}
+```
+
+### GET /api/v1/monitoring/top-merchants
+**Описание:** Топ продавцов
+**Функция:** Возвращает топ продавцов по обороту
+**Параметры:**
+- `limit` (query, int, default: 10) - количество продавцов
+**Ответ:**
+```json
+{
+  "merchants": [
+    {
+      "id": 123,
+      "name": "Test Merchant",
+      "total_payments": 100,
+      "total_amount": 1000000.00
+    }
+  ]
+}
+```
+
+---
+
+## 6. СТРАНИЦА ПЛАТЕЖА (/pay)
+
+### GET /api/v1/pay
+**Описание:** Страница платежа
+**Функция:** Возвращает HTML страницу для оплаты
+**Параметры:**
+- `token` (query, string) - токен платежа
+**Ответ:** HTML страница
+
+---
+
+## ОБЩАЯ ИНФОРМАЦИЯ
+
+**Всего эндпоинтов после рефакторинга:** ~180 (сокращено с ~200+)
+**Основные изменения:**
+- ✅ Объединены все алерты в `/admin/alerts`
+- ✅ Создан единый эндпоинт статистики `/admin/statistics`
+- ✅ Удалены устаревшие модули `/mbank`, `/qr`, `/alerts`
+- ✅ Удалены тестовые эндпоинты из продакшена
+- ✅ Улучшена архитектура и уменьшена избыточность
+
+**Ключевые возможности системы:**
+- **Торговые точки (филиалы)**: Создание и управление торговыми точками с названием, адресом и описанием
+- **Статичные QR-коды**: Генерация QR-кодов для торговых точек без фиксированной суммы
+- **Динамические QR-коды**: Создание QR-кодов с конкретной суммой для разовых платежей
+- **Двухфазные платежи**: Поддержка современной схемы платежей с подготовкой и подтверждением
+- **Мониторинг и алерты**: Полная система мониторинга с уведомлениями
+- **Детальная статистика**: Статистика по продавцам, торговым точкам, банкам и системе в целом
+
+**Аутентификация:** 
+- Большинство эндпоинтов требуют аутентификации через токены
+- Админские эндпоинты требуют админской аутентификации
+
+**Валидация:** 
+- Все входные данные валидируются через Pydantic модели
+- Подробные сообщения об ошибках
+
+**Логирование:** 
+- Все операции логируются для аудита
+- Отдельные логи для платежей, админских действий, ошибок
+
+**Безопасность:**
+- HMAC подписи для webhook'ов
+- Rate limiting для всех эндпоинтов
+- Валидация QR-кодов на безопасность
+
+**Документация:** 
+- Все эндпоинты имеют подробную документацию
+- Примеры запросов и ответов
+- Описание всех полей и параметров

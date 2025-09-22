@@ -1,0 +1,127 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Журнал аудита — QRPayHub{% endblock %}
+
+{% block content %}
+<div class="card">
+    <h2>Журнал аудита</h2>
+    <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+        <input type="date" id="audit-date-from" placeholder="От">
+        <input type="date" id="audit-date-to" placeholder="До">
+        <select id="audit-action">
+            <option value="">Все действия</option>
+            <option value="login">Вход</option>
+            <option value="logout">Выход</option>
+            <option value="create">Создание</option>
+            <option value="update">Изменение</option>
+            <option value="delete">Удаление</option>
+        </select>
+        <button class="btn primary" onclick="loadAuditLogs()">Фильтр</button>
+    </div>
+    <div id="audit-logs" class="muted">Загрузка...</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Устанавливаем даты по умолчанию (последние 7 дней)
+    const today = new Date();
+    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    
+    document.getElementById('audit-date-to').value = today.toISOString().split('T')[0];
+    document.getElementById('audit-date-from').value = weekAgo.toISOString().split('T')[0];
+    
+    loadAuditLogs();
+});
+
+async function loadAuditLogs() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const params = new URLSearchParams();
+        
+        const dateFrom = document.getElementById('audit-date-from').value;
+        const dateTo = document.getElementById('audit-date-to').value;
+        const action = document.getElementById('audit-action').value;
+        
+        if (dateFrom) params.append('date_from', dateFrom);
+        if (dateTo) params.append('date_to', dateTo);
+        if (action) params.append('action', action);
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/audit/logs?${params}`), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) throw new Error('Ошибка загрузки журнала аудита');
+        
+        const logs = await response.json();
+        displayAuditLogs(logs);
+    } catch (error) {
+        console.error('Ошибка загрузки журнала аудита:', error);
+        document.getElementById('audit-logs').innerHTML = '<div class="error">Ошибка загрузки</div>';
+    }
+}
+
+function displayAuditLogs(logs) {
+    const container = document.getElementById('audit-logs');
+    
+    // Проверяем, что logs это массив или объект с массивом
+    const logsArray = Array.isArray(logs) ? logs : (logs.logs || logs.data || []);
+    
+    if (!logsArray || logsArray.length === 0) {
+        container.innerHTML = '<div class="muted">Нет записей</div>';
+        return;
+    }
+    
+    const table = `
+        <table>
+            <thead>
+                <tr>
+                    <th>Дата/время</th>
+                    <th>Пользователь</th>
+                    <th>Действие</th>
+                    <th>Объект</th>
+                    <th>IP адрес</th>
+                    <th>Детали</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${logsArray.map(log => {
+                    const date = new Date(log.timestamp).toLocaleString('ru-RU');
+                    
+                    return `
+                        <tr>
+                            <td style="font-size: 12px;">${date}</td>
+                            <td>${log.user_name || log.user_id || '—'}</td>
+                            <td>${getActionBadge(log.action)}</td>
+                            <td style="font-family: monospace; font-size: 12px;">
+                                ${log.resource_type || '—'}<br>
+                                <span class="muted">${log.resource_id || ''}</span>
+                            </td>
+                            <td style="font-family: monospace; font-size: 12px;">${log.ip_address || '—'}</td>
+                            <td style="max-width: 200px; word-wrap: break-word; font-size: 12px;">
+                                ${log.details || '—'}
+                            </td>
+                        </tr>
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+    
+    container.innerHTML = table;
+}
+
+function getActionBadge(action) {
+    const badges = {
+        'login': '<span class="badge ok">Вход</span>',
+        'logout': '<span class="badge">Выход</span>',
+        'create': '<span class="badge ok">Создание</span>',
+        'update': '<span class="badge warn">Изменение</span>',
+        'delete': '<span class="badge err">Удаление</span>',
+        'view': '<span class="badge">Просмотр</span>'
+    };
+    return badges[action] || `<span class="badge">${action}</span>`;
+}
+</script>
+{% endblock %}

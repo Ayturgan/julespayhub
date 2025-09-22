@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light-green">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QRPayHub - Вход администратора (MVP)</title>
+    <style>
+        :root {
+            --primary-600: #059669;
+            --primary-500: #10b981;
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --text-primary: #f8fafc;
+            --text-secondary: #cbd5e1;
+            --border-color: #334155;
+        }
+        html[data-theme="light-green"]{ --primary-600:#059669; --primary-500:#10b981; --bg-primary:#ffffff; --bg-secondary:#f8fafc; --bg-tertiary:#ffffff; --text-primary:#0f172a; --text-secondary:#334155; --border-color:#cbd5e1; }
+        * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Inter, sans-serif; }
+        body { margin: 0; background: var(--bg-primary); color: var(--text-primary); min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+        .box { width: 100%; max-width: 420px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 18px; }
+        .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+        .brand-badge { width: 36px; height: 36px; border-radius: 8px; background: var(--primary-600); display: flex; align-items: center; justify-content: center; font-weight: 700; color:#ffffff; }
+        h1 { margin: 0 0 2px 0; font-size: 18px; }
+        .muted { color: var(--text-secondary); font-size: 13px; }
+        label { display: block; margin: 10px 0 6px; color: var(--text-secondary); font-size: 13px; }
+        input { width: 100%; padding: 10px; border-radius: 10px; border: 1px solid var(--border-color); background: var(--bg-tertiary); color: var(--text-primary); }
+        .btn { width: 100%; margin-top: 12px; background: var(--primary-600); color: #fff; border: none; padding: 12px; border-radius: 10px; cursor: pointer; font-weight: 600; }
+        .row { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+        .msg { display: none; margin-top: 10px; padding: 10px; border-radius: 8px; font-size: 14px; }
+        .msg.err { background: #3f1d1d; color: #fecaca; border: 1px solid #7f1d1d; }
+        .msg.ok { background: #052e26; color: #bbf7d0; border: 1px solid #065f46; }
+        a { color: var(--text-secondary); text-decoration: none; font-size: 13px; }
+        a:hover { color: var(--text-primary); }
+    </style>
+    </style>
+    <script>
+        (function themeInit(){
+            try{
+                const saved = localStorage.getItem('theme') || 'light';
+                const theme = saved === 'light' ? 'light-green' : 'dark-green';
+                document.documentElement.setAttribute('data-theme', theme);
+            }catch{}
+        })();
+        function toggleTheme(){
+            const current = document.documentElement.getAttribute('data-theme') || 'dark-green';
+            const next = current === 'dark-green' ? 'light-green' : 'dark-green';
+            document.documentElement.setAttribute('data-theme', next);
+            try{ localStorage.setItem('theme', next === 'light-green' ? 'light' : 'dark'); }catch{}
+            const btn = document.getElementById('theme-toggle'); if(btn){ btn.textContent = next === 'light-green' ? '🌙' : '☀️'; }
+        }
+        document.addEventListener('DOMContentLoaded', function(){
+            const btn = document.getElementById('theme-toggle');
+            if(btn){ const current = document.documentElement.getAttribute('data-theme')||'dark-green'; btn.textContent = current === 'light-green' ? '🌙' : '☀️'; }
+        });
+    </script>
+</head>
+<body>
+    <div class="box">
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; gap:8px;">
+            <div class="brand">
+                <div class="brand-badge">QR</div>
+                <div>
+                    <h1>QRPayHub</h1>
+                    <div class="muted">Вход администратора</div>
+                </div>
+            </div>
+            <button id="theme-toggle" type="button" onclick="toggleTheme()" 
+                style="background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); padding: 6px 10px; border-radius: 8px; cursor: pointer; width:auto;">☀️</button>
+        </div>
+
+        <div id="error-message" class="msg err"></div>
+        <div id="success-message" class="msg ok"></div>
+
+        <form id="login-form">
+                <label for="username">Имя пользователя</label>
+            <input type="text" id="username" name="username" placeholder="admin" required>
+                <label for="password">Пароль</label>
+            <input type="password" id="password" name="password" placeholder="******" required>
+            <button type="submit" class="btn"><span id="btn-text">Войти</span></button>
+        </form>
+
+        <div class="row">
+            <a href="/">← На главную</a>
+            <a href="/merchant-login">Вход для продавца</a>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('login-form');
+        const errorBox = document.getElementById('error-message');
+        const okBox = document.getElementById('success-message');
+        const btnText = document.getElementById('btn-text');
+
+        function getErrorText(payload) {
+            if (!payload) return 'Ошибка входа';
+            if (typeof payload === 'string') return payload;
+            
+            // Если это объект, пытаемся извлечь текст ошибки
+            try {
+                if (payload.error) {
+                    const error = payload.error;
+                    if (typeof error === 'string') return error;
+                    return error.user_message || error.message || error.code || 'Ошибка входа';
+                }
+                
+                if (payload.detail) {
+                    const detail = payload.detail;
+                    if (typeof detail === 'string') return detail;
+                    if (Array.isArray(detail)) {
+                        // Если detail - это массив ошибок валидации
+                        return detail.map(err => err.msg || err.message || String(err)).join(', ') || 'Ошибка валидации';
+                    }
+                    if (detail.error) {
+                        const error = detail.error;
+                        if (typeof error === 'string') return error;
+                        return error.user_message || error.message || error.code || 'Ошибка входа';
+                    }
+                    return detail.message || 'Ошибка входа';
+                }
+                
+                if (payload.message) {
+                    return typeof payload.message === 'string' ? payload.message : 'Ошибка входа';
+                }
+                
+                // Если ничего не удалось извлечь, возвращаем дефолтное сообщение
+                return 'Неверные учетные данные';
+            } catch (e) {
+                return 'Ошибка входа';
+            }
+        }
+
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            errorBox.style.display = 'none';
+            okBox.style.display = 'none';
+            btnText.textContent = 'Вход...';
+            
+            try {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+                const response = await fetch('/api/v1/admin-auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                let data = null;
+                try { data = await response.json(); } catch {}
+                if (response.ok) {
+                    // Сохраняем токен в cookie (для middleware) и localStorage (для клиентской части)
+                    document.cookie = `admin_token=${data.access_token}; path=/; max-age=1800; SameSite=Strict`;
+                    localStorage.setItem('admin_token', data.access_token);
+                    localStorage.setItem('admin_info', JSON.stringify(data.admin));
+                    
+                    console.log('Токен сохранен:', data.access_token);
+                    console.log('Данные админа:', data.admin);
+                    
+                    okBox.textContent = 'Вход выполнен. Перенаправление...';
+                    okBox.style.display = 'block';
+                    
+                    setTimeout(() => { 
+                        console.log('Перенаправление на /admin...');
+                        window.location.href = '/admin'; 
+                    }, 700);
+                } else {
+                    errorBox.textContent = getErrorText(data);
+                    errorBox.style.display = 'block';
+                }
+            } catch (err) {
+                errorBox.textContent = 'Ошибка соединения с сервером';
+                errorBox.style.display = 'block';
+            } finally {
+                btnText.textContent = 'Войти';
+            }
+        });
+    </script>
+</body>
+</html>

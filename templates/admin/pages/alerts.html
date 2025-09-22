@@ -1,0 +1,530 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Алерты{% endblock %}
+{% block page_title %}Системные уведомления{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <p class="text-secondary">Мониторинг системных алертов и уведомлений</p>
+    
+    <div style="display: flex; gap: 12px; margin-top: 16px; align-items: center;">
+        <button class="btn primary" onclick="loadAlerts()">🔄 Обновить</button>
+        <button class="btn" onclick="acknowledgeAllAlerts()">✅ Подтвердить все</button>
+        <button class="btn" onclick="createTestAlert()">⚠️ Тестовый алерт</button>
+        
+        <!-- Фильтр по типу -->
+        <select id="type-filter" onchange="applyFilters()" style="padding: 8px; border-radius: 6px; border: 1px solid var(--border-color);">
+            <option value="">Все типы</option>
+            <option value="error">Ошибки</option>
+            <option value="warning">Предупреждения</option>
+            <option value="info">Информация</option>
+            <option value="critical">Критические</option>
+        </select>
+        
+        <!-- Фильтр по статусу -->
+        <select id="status-filter" onchange="applyFilters()" style="padding: 8px; border-radius: 6px; border: 1px solid var(--border-color);">
+            <option value="">Все статусы</option>
+            <option value="active">Активные</option>
+            <option value="acknowledged">Подтвержденные</option>
+            <option value="resolved">Решенные</option>
+        </select>
+        
+        <input type="search" id="search-input" placeholder="Поиск по сообщению..." onkeyup="applyFilters()" style="padding: 8px; border-radius: 6px; border: 1px solid var(--border-color); width: 200px;">
+    </div>
+</div>
+
+<div id="alerts-loading" class="loading">Загрузка алертов...</div>
+
+<div id="alerts-content" style="display: none;">
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Тип</th>
+                    <th>Сообщение</th>
+                    <th>Источник</th>
+                    <th>Статус</th>
+                    <th>Время</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody id="alerts-table-body">
+                <!-- Данные будут загружены -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Пагинация -->
+<div id="pagination-container" style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+    <div class="text-secondary" id="pagination-info">
+        Загрузка...
+    </div>
+    <div style="display: flex; gap: 8px;" id="pagination-buttons">
+        <!-- Кнопки пагинации будут добавлены динамически -->
+    </div>
+</div>
+
+<!-- Статистика -->
+<div class="grid cols-4 mb-6" style="margin-top: 32px;" id="alert-stats">
+    <div class="card">
+        <h3>Активных алертов</h3>
+        <div style="font-size: 24px; font-weight: bold; color: #dc2626; margin: 8px 0;" id="active-alerts">
+            0
+        </div>
+        <div class="text-sm muted">Требуют внимания</div>
+    </div>
+    
+    <div class="card">
+        <h3>Критических</h3>
+        <div style="font-size: 24px; font-weight: bold; color: #991b1b; margin: 8px 0;" id="critical-alerts">
+            0
+        </div>
+        <div class="text-sm muted">Высокий приоритет</div>
+    </div>
+    
+    <div class="card">
+        <h3>За сегодня</h3>
+        <div style="font-size: 24px; font-weight: bold; color: #f59e0b; margin: 8px 0;" id="today-alerts">
+            0
+            </div>
+        <div class="text-sm muted">Новых уведомлений</div>
+            </div>
+    
+    <div class="card">
+        <h3>Решенных</h3>
+        <div style="font-size: 24px; font-weight: bold; color: #10b981; margin: 8px 0;" id="resolved-alerts">
+            0
+            </div>
+        <div class="text-sm muted">Обработанных</div>
+            </div>
+        </div>
+
+<!-- Модальное окно деталей алерта -->
+<div id="alert-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: var(--bg-secondary); padding: 24px; border-radius: 12px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">Детали алерта</h3>
+            <button onclick="hideAlertModal()" style="background: none; border: none; font-size: 20px; cursor: pointer;">✕</button>
+        </div>
+        <div id="alert-details">
+            <!-- Детали будут загружены -->
+        </div>
+    </div>
+</div>
+
+<script>
+let currentPage = 1;
+let pageSize = 20;
+let allAlerts = [];
+let filteredAlerts = [];
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadAlerts();
+    
+    // Автообновление каждые 30 секунд
+    setInterval(loadAlerts, 30000);
+});
+
+async function loadAlerts() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        if (!token) {
+            window.location.href = '/admin/login';
+            return;
+        }
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/alerts/alerts'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки алертов');
+        }
+        
+        allAlerts = await response.json();
+        filteredAlerts = [...allAlerts];
+        
+        displayAlerts();
+        updateStatistics();
+        updatePagination();
+        
+        document.getElementById('alerts-loading').style.display = 'none';
+        document.getElementById('alerts-content').style.display = 'block';
+        
+    } catch (error) {
+        console.error('Ошибка загрузки алертов:', error);
+        showError('Ошибка загрузки алертов: ' + error.message);
+    }
+}
+
+function displayAlerts() {
+    const tbody = document.getElementById('alerts-table-body');
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const alerts = filteredAlerts.slice(startIndex, endIndex);
+    
+    if (alerts.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center muted">Нет алертов</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = alerts.map(alert => `
+        <tr>
+            <td>
+                <span class="badge ${getTypeBadgeClass(alert.alert_type)}">${getTypeIcon(alert.alert_type)} ${getTypeText(alert.alert_type)}</span>
+            </td>
+            <td>
+                <div style="max-width: 300px;">
+                    <div><strong>${alert.title || 'Алерт'}</strong></div>
+                    <div class="text-sm muted" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                        ${alert.message || 'Нет описания'}
+            </div>
+        </div>
+            </td>
+            <td>${alert.source || 'System'}</td>
+            <td>
+                <span class="badge ${getStatusBadgeClass(alert.status)}">${getStatusText(alert.status)}</span>
+            </td>
+            <td>
+                <div>${formatDateTime(alert.created_at)}</div>
+                <div class="text-sm muted">${getTimeAgo(alert.created_at)}</div>
+            </td>
+            <td>
+                <div class="table-actions">
+                    <button class="btn-table primary" onclick="viewAlertDetails('${alert.id}')" title="Детали">👁️</button>
+                    ${alert.status === 'active' ? `<button class="btn-table secondary" onclick="acknowledgeAlert('${alert.id}')" title="Подтвердить">✅</button>` : ''}
+                    ${alert.status === 'acknowledged' ? `<button class="btn-table primary" onclick="resolveAlert('${alert.id}')" title="Решить">✔️</button>` : ''}
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function updateStatistics() {
+    const activeAlerts = allAlerts.filter(a => a.status === 'active').length;
+    const criticalAlerts = allAlerts.filter(a => a.alert_type === 'critical' && a.status === 'active').length;
+    const resolvedAlerts = allAlerts.filter(a => a.status === 'resolved').length;
+    
+    const today = new Date().toDateString();
+    const todayAlerts = allAlerts.filter(a => 
+        new Date(a.created_at).toDateString() === today
+    ).length;
+    
+    document.getElementById('active-alerts').textContent = activeAlerts;
+    document.getElementById('critical-alerts').textContent = criticalAlerts;
+    document.getElementById('today-alerts').textContent = todayAlerts;
+    document.getElementById('resolved-alerts').textContent = resolvedAlerts;
+}
+
+function updatePagination() {
+    const totalPages = Math.ceil(filteredAlerts.length / pageSize);
+    const startIndex = (currentPage - 1) * pageSize + 1;
+    const endIndex = Math.min(currentPage * pageSize, filteredAlerts.length);
+    
+    document.getElementById('pagination-info').textContent = 
+        `Показано ${startIndex}-${endIndex} из ${filteredAlerts.length} алертов`;
+    
+    const buttonsContainer = document.getElementById('pagination-buttons');
+    buttonsContainer.innerHTML = '';
+    
+    if (totalPages > 1) {
+        if (currentPage > 1) {
+            buttonsContainer.innerHTML += `<button class="btn" onclick="changePage(${currentPage - 1})">← Предыдущая</button>`;
+        }
+        
+        for (let i = Math.max(1, currentPage - 2); i <= Math.min(totalPages, currentPage + 2); i++) {
+            const isActive = i === currentPage ? 'primary' : '';
+            buttonsContainer.innerHTML += `<button class="btn ${isActive}" onclick="changePage(${i})">${i}</button>`;
+        }
+        
+        if (currentPage < totalPages) {
+            buttonsContainer.innerHTML += `<button class="btn" onclick="changePage(${currentPage + 1})">Следующая →</button>`;
+        }
+    }
+}
+
+function changePage(page) {
+    currentPage = page;
+    displayAlerts();
+    updatePagination();
+}
+
+function applyFilters() {
+    const typeFilter = document.getElementById('type-filter').value;
+    const statusFilter = document.getElementById('status-filter').value;
+    const searchTerm = document.getElementById('search-input').value.toLowerCase();
+    
+    filteredAlerts = allAlerts.filter(alert => {
+        const matchesType = !typeFilter || alert.alert_type === typeFilter;
+        const matchesStatus = !statusFilter || alert.status === statusFilter;
+        const matchesSearch = !searchTerm || 
+            (alert.title && alert.title.toLowerCase().includes(searchTerm)) ||
+            (alert.message && alert.message.toLowerCase().includes(searchTerm)) ||
+            (alert.source && alert.source.toLowerCase().includes(searchTerm));
+        
+        return matchesType && matchesStatus && matchesSearch;
+    });
+    
+    currentPage = 1;
+    displayAlerts();
+    updatePagination();
+}
+
+async function viewAlertDetails(alertId) {
+    const alert = allAlerts.find(a => a.id === alertId);
+    if (!alert) return;
+    
+    showAlertModal(alert);
+}
+
+function showAlertModal(alert) {
+    const modal = document.getElementById('alert-modal');
+    const detailsContainer = document.getElementById('alert-details');
+    
+    detailsContainer.innerHTML = `
+        <div style="margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+                <span class="badge ${getTypeBadgeClass(alert.alert_type)}" style="font-size: 16px;">
+                    ${getTypeIcon(alert.alert_type)} ${getTypeText(alert.alert_type)}
+                </span>
+                <span class="badge ${getStatusBadgeClass(alert.status)}">${getStatusText(alert.status)}</span>
+            </div>
+            
+            <h4 style="margin: 0 0 8px 0;">${alert.title || 'Системный алерт'}</h4>
+            <p style="color: var(--text-secondary); margin: 0 0 16px 0;">${alert.message || 'Нет описания'}</p>
+        </div>
+        
+        <div class="grid cols-2" style="gap: 16px; margin-bottom: 20px;">
+            <div>
+                <h5>Информация</h5>
+                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px;">
+                    <div style="margin-bottom: 8px;"><strong>ID:</strong> ${alert.id}</div>
+                    <div style="margin-bottom: 8px;"><strong>Источник:</strong> ${alert.source || 'System'}</div>
+                    <div style="margin-bottom: 8px;"><strong>Создан:</strong> ${formatDateTime(alert.created_at)}</div>
+                    <div><strong>Обновлен:</strong> ${formatDateTime(alert.updated_at)}</div>
+                </div>
+            </div>
+            <div>
+                <h5>Метаданные</h5>
+                <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px;">
+                    ${alert.metadata ? 
+                        Object.entries(JSON.parse(alert.metadata) || {}).map(([key, value]) => 
+                            `<div style="margin-bottom: 4px;"><strong>${key}:</strong> ${value}</div>`
+                        ).join('') :
+                        '<div class="text-sm muted">Нет дополнительных данных</div>'
+                    }
+                </div>
+            </div>
+        </div>
+        
+        <div style="display: flex; gap: 12px; justify-content: flex-end; padding-top: 16px; border-top: 1px solid var(--border-color);">
+            ${alert.status === 'active' ? `<button class="btn secondary" onclick="acknowledgeAlert('${alert.id}')">✅ Подтвердить</button>` : ''}
+            ${alert.status === 'acknowledged' ? `<button class="btn primary" onclick="resolveAlert('${alert.id}')">✔️ Решить</button>` : ''}
+            <button class="btn" onclick="hideAlertModal()">Закрыть</button>
+        </div>
+    `;
+    
+    modal.style.display = 'flex';
+}
+
+function hideAlertModal() {
+    document.getElementById('alert-modal').style.display = 'none';
+}
+
+async function acknowledgeAlert(alertId) {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/alerts/alerts/${alertId}/acknowledge`), {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка подтверждения алерта');
+        }
+        
+        alert('✅ Алерт подтвержден');
+        loadAlerts();
+        hideAlertModal();
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('❌ Ошибка: ' + error.message);
+    }
+}
+
+async function resolveAlert(alertId) {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/alerts/alerts/${alertId}/resolve`), {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка решения алерта');
+        }
+        
+        alert('✅ Алерт решен');
+        loadAlerts();
+        hideAlertModal();
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('❌ Ошибка: ' + error.message);
+    }
+}
+
+async function acknowledgeAllAlerts() {
+    const activeAlerts = allAlerts.filter(a => a.status === 'active');
+    if (activeAlerts.length === 0) {
+        alert('ℹ️ Нет активных алертов для подтверждения');
+        return;
+    }
+    
+    if (!confirm(`Подтвердить все активные алерты (${activeAlerts.length})?`)) return;
+    
+    try {
+        const token = localStorage.getItem('admin_token');
+        
+        for (const alert of activeAlerts) {
+            await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/alerts/alerts/${alert.id}/acknowledge`), {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+        }
+        
+        alert('✅ Все активные алерты подтверждены');
+        loadAlerts();
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('❌ Ошибка: ' + error.message);
+    }
+}
+
+async function createTestAlert() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch('/api/v1/admin/alerts/alerts/create', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                title: 'Тестовый алерт',
+                message: 'Это тестовый алерт, созданный администратором',
+                severity: 'warning',
+                category: 'test',
+                source: 'Admin Panel'
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка создания тестового алерта');
+        }
+        
+        alert('✅ Тестовый алерт создан');
+        loadAlerts();
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('❌ Ошибка: ' + error.message);
+    }
+}
+
+// Утилиты
+function getTypeBadgeClass(type) {
+    const classes = {
+        'error': 'err',
+        'warning': 'warn',
+        'info': 'info',
+        'critical': 'err'
+    };
+    return classes[type] || 'info';
+}
+
+function getTypeIcon(type) {
+    const icons = {
+        'error': '❌',
+        'warning': '⚠️',
+        'info': 'ℹ️',
+        'critical': '🚨'
+    };
+    return icons[type] || 'ℹ️';
+}
+
+function getTypeText(type) {
+    const texts = {
+        'error': 'Ошибка',
+        'warning': 'Предупреждение',
+        'info': 'Информация',
+        'critical': 'Критический'
+    };
+    return texts[type] || type;
+}
+
+function getStatusBadgeClass(status) {
+    const classes = {
+        'active': 'err',
+        'acknowledged': 'warn',
+        'resolved': 'ok'
+    };
+    return classes[status] || 'info';
+}
+
+function getStatusText(status) {
+    const texts = {
+        'active': 'Активный',
+        'acknowledged': 'Подтвержден',
+        'resolved': 'Решен'
+    };
+    return texts[status] || status;
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleString('ru-RU');
+}
+
+function getTimeAgo(dateString) {
+    if (!dateString) return '';
+    
+    const now = new Date();
+    const date = new Date(dateString);
+    const diffMs = now - date;
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (diffMins < 1) return 'только что';
+    if (diffMins < 60) return `${diffMins} мин назад`;
+    if (diffHours < 24) return `${diffHours} ч назад`;
+    if (diffDays < 7) return `${diffDays} дн назад`;
+    return formatDateTime(dateString).split(' ')[0];
+}
+
+function showError(message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error';
+    errorDiv.textContent = message;
+    document.querySelector('.content-area').insertBefore(errorDiv, document.querySelector('.content-area').firstChild);
+    
+    setTimeout(() => {
+        errorDiv.remove();
+    }, 5000);
+}
+</script>
+{% endblock %}
+

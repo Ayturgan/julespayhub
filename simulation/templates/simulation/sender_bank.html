@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }}</title>
+    
+    <script>
+        // Глобальные переменные для URL
+        window.BASE_URL = "{{ BASE_URL }}";
+        window.PAYMENT_URL_TEMPLATE = "{{ PAYMENT_URL_TEMPLATE }}";
+        window.SIMULATION_URL_TEMPLATE = "{{ SIMULATION_URL_TEMPLATE }}";
+        window.BANK_API_URL = "{{ BANK_API_URL }}";
+    </script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .bg-gradient-sender {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        .request-card {
+            border-left: 4px solid #4facfe;
+            transition: all 0.3s;
+            margin-bottom: 10px;
+        }
+        .request-card:hover {
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+        .new-request {
+            animation: fadeInUp 0.8s ease;
+            border-left-color: #ff5722 !important;
+            background: linear-gradient(90deg, #fff3e0 0%, #ffffff 100%);
+        }
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .status-online {
+            background-color: #4caf50;
+            box-shadow: 0 0 0 2px rgba(76, 175, 80, 0.3);
+        }
+        .bank-info {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-radius: 10px;
+            padding: 20px;
+        }
+        .log-container {
+            height: 300px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            background: #f8f9fa;
+            border-radius: 5px;
+            padding: 10px;
+        }
+        .log-entry {
+            padding: 4px 8px;
+            margin: 2px 0;
+            border-radius: 3px;
+            border-left: 3px solid #ccc;
+        }
+        .log-entry.info {
+            background-color: #e3f2fd;
+            border-left-color: #2196f3;
+        }
+        .log-entry.success {
+            background-color: #e8f5e8;
+            border-left-color: #4caf50;
+        }
+        .log-entry.error {
+            background-color: #fde8e8;
+            border-left-color: #f44336;
+        }
+    </style>
+</head>
+<body class="bg-light" 
+      data-bank-code="{{ receiver_bank.code if receiver_bank else 'DEMO' }}" 
+      data-bank-name="{{ receiver_bank.name if receiver_bank else 'Демо Банк' }}">
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-gradient-sender">
+        <div class="container">
+            <a class="navbar-brand" href="/simulation">
+                <i class="fas fa-university me-2"></i>
+                Банк Отправителя
+            </a>
+            <div class="navbar-nav ms-auto">
+                <div class="nav-item">
+                    <span class="nav-link">
+                        <span class="status-indicator status-online"></span>
+                        Онлайн мониторинг
+                    </span>
+                </div>
+                <div class="nav-item">
+                    <button class="nav-link btn btn-link" onclick="openReceiverBank()" style="border: none; background: none; color: white;">
+                        <i class="fas fa-exchange-alt me-1"></i>
+                        Банк Получателя
+                    </button>
+                </div>
+                <a class="nav-link" href="/simulation">
+                    <i class="fas fa-arrow-left me-1"></i>
+                    Назад к симулятору
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Request Monitor -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <div class="row align-items-center">
+                            <div class="col">
+                                <h5 class="mb-0">
+                                    <i class="fas fa-list me-2"></i>
+                                    Мониторинг запросов
+                                </h5>
+                            </div>
+                            <div class="col-auto">
+                                <button class="btn btn-outline-primary btn-sm" onclick="refreshRequests()">
+                                    <i class="fas fa-sync-alt" id="refreshIcon"></i>
+                                    Обновить
+                            </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="requestsList">
+                            <div class="text-center py-5">
+                                <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                                <h5 class="text-muted">Запросов пока нет</h5>
+                                <p class="text-muted">Ожидание запросов от QRPayHub...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Log -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-terminal me-2"></i>
+                            Системный лог
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div id="logContainer" class="log-container">
+                            <div class="log-entry info">
+                                <strong>[{{ "now" }}]</strong> Система банка-отправителя запущена
+                            </div>
+                            <div class="log-entry info">
+                                <strong>[{{ "now" }}]</strong> Ожидание запросов от QRPayHub...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Глобальные переменные
+        let bankCode = document.body.getAttribute('data-bank-code') || 'DEMO';
+        let bankName = document.body.getAttribute('data-bank-name') || 'Демо Банк';
+        let refreshInterval = null;
+        let pendingRequests = [];
+
+        // Функция обновления информации о банке
+        function updateBankInfo() {
+            // Получаем выбранный банк из sessionStorage
+            const selectedBankData = sessionStorage.getItem('selectedBank');
+            if (selectedBankData) {
+                try {
+                    const selectedBank = JSON.parse(selectedBankData);
+                    bankCode = selectedBank.code;
+                    bankName = selectedBank.name;
+                    
+                    // Обновляем отображение
+                    document.getElementById('bankName').textContent = bankName;
+                    document.getElementById('bankCode').textContent = bankCode;
+                    
+                    console.log(`Банк обновлен: ${bankName} (${bankCode})`);
+                } catch (error) {
+                    console.error('Ошибка при обновлении информации о банке:', error);
+                }
+            }
+        }
+
+        // Запуск автообновления при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            updateBankInfo(); // Обновляем информацию о банке
+            startAutoRefresh();
+        });
+
+        // Функция автоматического обновления
+        function startAutoRefresh() {
+            refreshInterval = setInterval(async () => {
+                await checkForNewRequests();
+            }, 2000); // Обновляем каждые 2 секунды
+        }
+
+        // Функция проверки новых запросов
+        async function checkForNewRequests() {
+            try {
+                const response = await fetch('/simulation/api/bank-requests/sender_bank');
+                if (response.ok) {
+                    const data = await response.json();
+                    updateRequestsList(data.requests);
+                }
+            } catch (error) {
+                console.error('Ошибка проверки запросов:', error);
+            }
+        }
+
+        // Функция обновления списка запросов
+        function updateRequestsList(requests) {
+            const requestsList = document.getElementById('requestsList');
+            
+            if (requests.length === 0) {
+                requestsList.innerHTML = `
+                    <div class="text-center py-5">
+                        <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">Запросов пока нет</h5>
+                        <p class="text-muted">Ожидание запросов от QRPayHub...</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            requestsList.innerHTML = '';
+            
+            requests.forEach(request => {
+                const requestCard = document.createElement('div');
+                requestCard.className = 'request-card p-3 border-bottom';
+                requestCard.id = `request-${request.id}`;
+                
+                const statusClass = request.status === 'pending' ? 'text-warning' : 
+                                  request.status === 'accepted' ? 'text-success' : 'text-danger';
+                const statusText = request.status === 'pending' ? 'Ожидание' : 
+                                 request.status === 'accepted' ? 'Принято' : 'Отклонено';
+                
+                requestCard.innerHTML = `
+                    <div class="row align-items-center">
+                        <div class="col-md-3">
+                            <div class="fw-bold ${statusClass}">
+                                ${request.phase.toUpperCase()} ${request.operation_type === 'refund' ? 'ВОЗВРАТ' : 'запрос'}
+                            </div>
+                            <small class="text-muted">
+                                Сумма: ${request.amount} ${request.currency}
+                            </small>
+                            ${request.operation_type === 'refund' ? `
+                                <br><small class="text-info">Причина: ${request.reason || 'N/A'}</small>
+                            ` : ''}
+                        </div>
+                        <div class="col-md-3">
+                            <div class="fw-bold">ID: ${request.transaction_id}</div>
+                            <small class="text-muted">${request.bank_role} банк</small>
+                        </div>
+                        <div class="col-md-3">
+                            ${request.operation_type === 'refund' ? `
+                                <div class="fw-bold text-info">🔄 ВОЗВРАТ</div>
+                                <small class="text-muted">Запрос на возврат средств</small>
+                            ` : `
+                                <div class="fw-bold">Телефон: ${request.payer_phone || 'N/A'}</div>
+                                <small class="text-muted">Счет: ${request.sender_account || 'N/A'}</small>
+                            `}
+                        </div>
+                        <div class="col-md-3 text-end">
+                            ${request.status === 'pending' ? `
+                                <button class="btn btn-success btn-sm me-2" onclick="acceptRequest('${request.id}')">
+                                    <i class="fas fa-check"></i> Принять
+                                </button>
+                                <button class="btn btn-danger btn-sm" onclick="rejectRequest('${request.id}')">
+                                    <i class="fas fa-times"></i> Отклонить
+                                </button>
+                            ` : `
+                                <span class="badge ${request.status === 'accepted' ? 'bg-success' : 'bg-danger'}">${statusText}</span>
+                            `}
+                        </div>
+                    </div>
+                `;
+                
+                requestsList.appendChild(requestCard);
+            });
+        }
+
+        // Функция обработки PREPARE запроса
+        function handlePrepareRequest(requestId, amount, payerPhone, senderAccount) {
+            const requestsList = document.getElementById('requestsList');
+            
+            const requestCard = document.createElement('div');
+            requestCard.className = 'request-card p-3 border-bottom new-request';
+            requestCard.innerHTML = `
+                <div class="row align-items-center">
+                    <div class="col-md-3">
+                        <div class="fw-bold text-warning">
+                            PREPARE запрос
+                        </div>
+                        <small class="text-muted">
+                            Сумма: ${amount} KGS
+                        </small>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="fw-bold">ID: ${requestId}</div>
+                        <small class="text-muted">Телефон: ${payerPhone}</small>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="fw-bold">Счет: ${senderAccount}</div>
+                        <small class="text-muted">Ожидание решения</small>
+                    </div>
+                    <div class="col-md-3 text-end">
+                        <button class="btn btn-success btn-sm me-2" onclick="acceptRequest('${requestId}', ${amount})">
+                            <i class="fas fa-check"></i> Принять
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="rejectRequest('${requestId}')">
+                            <i class="fas fa-times"></i> Отклонить
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            requestsList.insertBefore(requestCard, requestsList.firstChild);
+            
+            // Убираем выделение через 3 секунды
+            setTimeout(() => {
+                requestCard.classList.remove('new-request');
+            }, 3000);
+            
+            addLog('info', `Получен PREPARE запрос: ${requestId}, сумма: ${amount} KGS`);
+        }
+
+        // Функция обработки COMMIT запроса
+        function handleCommitRequest(requestId, amount) {
+            const requestsList = document.getElementById('requestsList');
+            
+            const requestCard = document.createElement('div');
+            requestCard.className = 'request-card p-3 border-bottom new-request';
+            requestCard.innerHTML = `
+                <div class="row align-items-center">
+                    <div class="col-md-3">
+                        <div class="fw-bold text-primary">
+                            COMMIT запрос
+                        </div>
+                        <small class="text-muted">
+                            Сумма: ${amount} KGS
+                        </small>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="fw-bold">ID: ${requestId}</div>
+                        <small class="text-muted">Выполнение транзакции</small>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="fw-bold">Статус: Обработка</div>
+                        <small class="text-muted">Ожидание решения</small>
+                    </div>
+                    <div class="col-md-3 text-end">
+                        <button class="btn btn-success btn-sm me-2" onclick="acceptCommit('${requestId}', ${amount})">
+                            <i class="fas fa-check"></i> Выполнить
+                        </button>
+                        <button class="btn btn-danger btn-sm" onclick="rejectCommit('${requestId}')">
+                            <i class="fas fa-times"></i> Отклонить
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            requestsList.insertBefore(requestCard, requestsList.firstChild);
+            
+            setTimeout(() => {
+                requestCard.classList.remove('new-request');
+            }, 3000);
+            
+            addLog('info', `Получен COMMIT запрос: ${requestId}, сумма: ${amount} KGS`);
+        }
+
+        // Функция принятия PREPARE запроса
+        async function acceptRequest(requestId) {
+            try {
+                // Находим запрос в списке, чтобы определить его тип
+                const requestElement = document.getElementById(`request-${requestId}`);
+                const isRefund = requestElement && requestElement.innerHTML.includes('ВОЗВРАТ');
+                
+                const response = await fetch(`/simulation/api/bank-requests/sender_bank/${requestId}/respond`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        status: 'accepted',
+                        message: 'Request accepted by sender bank',
+                        confirmed: isRefund  // Добавляем флаг подтверждения только для возвратов
+                    })
+                });
+
+                if (response.ok) {
+                    addLog('success', `PREPARE запрос ${requestId} принят. Средства забронированы.`);
+                    showNotification(`PREPARE запрос ${requestId} принят`, 'success');
+                    // Обновляем список запросов
+                    await checkForNewRequests();
+                }
+            } catch (error) {
+                console.error('Ошибка принятия запроса:', error);
+                showNotification(`Ошибка принятия запроса: ${error.message}`, 'danger');
+            }
+        }
+
+        // Функция отклонения PREPARE запроса
+        async function rejectRequest(requestId) {
+            try {
+                const response = await fetch(`/simulation/api/bank-requests/sender_bank/${requestId}/respond`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        status: 'rejected',
+                        message: 'Request rejected by sender bank - insufficient funds'
+                    })
+                });
+                
+                if (response.ok) {
+                    addLog('error', `PREPARE запрос ${requestId} отклонен. Недостаточно средств.`);
+                    showNotification(`PREPARE запрос ${requestId} отклонен`, 'danger');
+                    // Обновляем список запросов
+                    await checkForNewRequests();
+                }
+            } catch (error) {
+                console.error('Ошибка отклонения запроса:', error);
+                showNotification(`Ошибка отклонения запроса: ${error.message}`, 'danger');
+            }
+        }
+
+        // Функция принятия COMMIT запроса
+        function acceptCommit(requestId, amount) {
+            const requestCard = event.target.closest('.request-card');
+            requestCard.innerHTML = `
+                <div class="row align-items-center">
+                    <div class="col-md-3">
+                        <div class="fw-bold text-success">
+                            ✅ COMMIT ВЫПОЛНЕН
+                        </div>
+                        <small class="text-muted">
+                            Сумма: ${amount} KGS
+                        </small>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="fw-bold">ID: ${requestId}</div>
+                        <small class="text-success">Средства списаны</small>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="fw-bold">Статус: Завершено</div>
+                        <small class="text-success">Транзакция выполнена</small>
+                    </div>
+                    <div class="col-md-3 text-end">
+                        <span class="badge bg-success">Выполнено</span>
+                    </div>
+                </div>
+            `;
+            
+            addLog('success', `COMMIT запрос ${requestId} выполнен. Средства списаны.`);
+            showNotification(`COMMIT запрос ${requestId} выполнен`, 'success');
+        }
+
+        // Функция отклонения COMMIT запроса
+        function rejectCommit(requestId) {
+            const requestCard = event.target.closest('.request-card');
+            requestCard.innerHTML = `
+                <div class="row align-items-center">
+                    <div class="col-md-3">
+                        <div class="fw-bold text-danger">
+                            ❌ COMMIT ОТКЛОНЕН
+                        </div>
+                        <small class="text-muted">
+                            Запрос отклонен
+                        </small>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="fw-bold">ID: ${requestId}</div>
+                        <small class="text-danger">Ошибка выполнения</small>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="fw-bold">Статус: Ошибка</div>
+                        <small class="text-danger">Транзакция отменена</small>
+                    </div>
+                    <div class="col-md-3 text-end">
+                        <span class="badge bg-danger">Ошибка</span>
+                    </div>
+                </div>
+            `;
+            
+            addLog('error', `COMMIT запрос ${requestId} отклонен. Ошибка выполнения.`);
+            showNotification(`COMMIT запрос ${requestId} отклонен`, 'danger');
+        }
+
+        // Функция добавления лога
+        function addLog(level, message) {
+            const logContainer = document.getElementById('logContainer');
+            const timestamp = new Date().toLocaleTimeString();
+            
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${level}`;
+            logEntry.innerHTML = `<strong>[${timestamp}]</strong> ${message}`;
+            
+            logContainer.appendChild(logEntry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        // Функция показа уведомлений
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `alert alert-${type} alert-dismissible position-fixed`;
+            notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; max-width: 300px;';
+            notification.innerHTML = `
+                <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'danger' ? 'times-circle' : 'info-circle'} me-2"></i>
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.remove();
+                }
+            }, 5000);
+        }
+
+        // Остановка автообновления при уходе со страницы
+        window.addEventListener('beforeunload', () => {
+            if (refreshInterval) {
+                clearInterval(refreshInterval);
+            }
+        });
+
+        // Функция ручного обновления
+        window.refreshRequests = function() {
+            checkForNewRequests();
+        };
+
+        // Функция открытия банка получателя
+        function openReceiverBank() {
+            const receiverBankUrl = '/simulation/receiver-account/1';
+            window.open(receiverBankUrl, '_blank');
+            showNotification('Открыта страница банка получателя', 'info');
+        }
+
+        // Экспортируем функции для использования в других скриптах
+        window.handlePrepareRequest = handlePrepareRequest;
+        window.handleCommitRequest = handleCommitRequest;
+        window.acceptRequest = acceptRequest;
+        window.rejectRequest = rejectRequest;
+        window.acceptCommit = acceptCommit;
+        window.rejectCommit = rejectCommit;
+        window.openReceiverBank = openReceiverBank;
+    </script>
+</body>
+</html>

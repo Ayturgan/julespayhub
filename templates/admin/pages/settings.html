@@ -1,0 +1,282 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Настройки — QRPayHub{% endblock %}
+
+{% block content %}
+<div class="grid cols-2">
+    <div class="card">
+        <h2>Системные настройки</h2>
+        <form id="system-settings-form">
+            <label>Таймаут запросов (сек)</label>
+            <input type="number" id="request-timeout" value="30" min="5" max="300">
+            
+            <label>Максимум повторов</label>
+            <input type="number" id="max-retries" value="3" min="0" max="10">
+            
+            <label>Режим обслуживания</label>
+            <select id="maintenance-mode">
+                <option value="false">Выключен</option>
+                <option value="true">Включен</option>
+            </select>
+            
+            <label>Уровень логирования</label>
+            <select id="log-level">
+                <option value="DEBUG">DEBUG</option>
+                <option value="INFO">INFO</option>
+                <option value="WARNING">WARNING</option>
+                <option value="ERROR">ERROR</option>
+            </select>
+            
+            <div style="margin-top: 12px;">
+                <button type="submit" class="btn primary">Сохранить</button>
+                <div id="settings-msg" class="muted"></div>
+            </div>
+        </form>
+    </div>
+    
+    <div class="card">
+        <h2>Алерты и уведомления</h2>
+        <form id="alerts-settings-form">
+            <label>Email для алертов</label>
+            <input type="email" id="alerts-email" placeholder="admin@example.com">
+            
+            <label>Webhook URL для алертов</label>
+            <input type="url" id="alerts-webhook" placeholder="https://hooks.slack.com/...">
+            
+            <label>Критичность для немедленных уведомлений</label>
+            <select id="immediate-alert-level">
+                <option value="CRITICAL">Только критические</option>
+                <option value="ERROR">Ошибки и выше</option>
+                <option value="WARNING">Предупреждения и выше</option>
+                <option value="INFO">Все уведомления</option>
+            </select>
+            
+            <div style="margin-top: 12px;">
+                <button type="submit" class="btn primary">Сохранить</button>
+                <div id="alerts-settings-msg" class="muted"></div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="grid cols-2" style="margin-top: 16px;">
+    <div class="card">
+        <h2>Резервное копирование</h2>
+        <div style="margin-bottom: 12px;">
+            <p class="muted">Последний бэкап: <span id="last-backup">Никогда</span></p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+            <button class="btn primary" onclick="createBackup()">Создать бэкап</button>
+            <button class="btn" onclick="downloadBackup()">Скачать последний</button>
+        </div>
+        <div id="backup-msg" class="muted" style="margin-top: 8px;"></div>
+    </div>
+    
+    <div class="card">
+        <h2>Системная информация</h2>
+        <div id="system-info" class="muted">Загрузка...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadSettings();
+    loadSystemInfo();
+    
+    document.getElementById('system-settings-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        saveSystemSettings();
+    });
+    
+    document.getElementById('alerts-settings-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        saveAlertsSettings();
+    });
+});
+
+async function loadSettings() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/system/settings'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) return;
+        
+        const settings = await response.json();
+        
+        // Заполняем форму системных настроек
+        if (settings.system) {
+            document.getElementById('request-timeout').value = settings.system.request_timeout || 30;
+            document.getElementById('max-retries').value = settings.system.max_retries || 3;
+            document.getElementById('maintenance-mode').value = settings.system.maintenance_mode || 'false';
+            document.getElementById('log-level').value = settings.system.log_level || 'INFO';
+        }
+        
+        // Заполняем форму настроек алертов
+        if (settings.alerts) {
+            document.getElementById('alerts-email').value = settings.alerts.email || '';
+            document.getElementById('alerts-webhook').value = settings.alerts.webhook_url || '';
+            document.getElementById('immediate-alert-level').value = settings.alerts.immediate_level || 'CRITICAL';
+        }
+        
+    } catch (error) {
+        console.error('Ошибка загрузки настроек:', error);
+    }
+}
+
+async function saveSystemSettings() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const settings = {
+            request_timeout: parseInt(document.getElementById('request-timeout').value),
+            max_retries: parseInt(document.getElementById('max-retries').value),
+            maintenance_mode: document.getElementById('maintenance-mode').value === 'true',
+            log_level: document.getElementById('log-level').value
+        };
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/system/settings/system'), {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(settings)
+        });
+        
+        if (!response.ok) throw new Error('Ошибка сохранения настроек');
+        
+        const msg = document.getElementById('settings-msg');
+        msg.textContent = 'Настройки сохранены!';
+        msg.style.color = 'var(--primary-600)';
+        
+        setTimeout(() => { msg.textContent = ''; }, 3000);
+        
+    } catch (error) {
+        console.error('Ошибка сохранения настроек:', error);
+        const msg = document.getElementById('settings-msg');
+        msg.textContent = 'Ошибка: ' + error.message;
+        msg.style.color = 'var(--err)';
+    }
+}
+
+async function saveAlertsSettings() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const settings = {
+            email: document.getElementById('alerts-email').value,
+            webhook_url: document.getElementById('alerts-webhook').value,
+            immediate_level: document.getElementById('immediate-alert-level').value
+        };
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/system/settings/alerts'), {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(settings)
+        });
+        
+        if (!response.ok) throw new Error('Ошибка сохранения настроек алертов');
+        
+        const msg = document.getElementById('alerts-settings-msg');
+        msg.textContent = 'Настройки алертов сохранены!';
+        msg.style.color = 'var(--primary-600)';
+        
+        setTimeout(() => { msg.textContent = ''; }, 3000);
+        
+    } catch (error) {
+        console.error('Ошибка сохранения настроек алертов:', error);
+        const msg = document.getElementById('alerts-settings-msg');
+        msg.textContent = 'Ошибка: ' + error.message;
+        msg.style.color = 'var(--err)';
+    }
+}
+
+async function loadSystemInfo() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/statistics?metric=system'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) throw new Error('Ошибка загрузки системной информации');
+        
+        const info = await response.json();
+        displaySystemInfo(info);
+    } catch (error) {
+        console.error('Ошибка загрузки системной информации:', error);
+        document.getElementById('system-info').innerHTML = '<div class="error">Ошибка загрузки</div>';
+    }
+}
+
+function displaySystemInfo(info) {
+    const html = `
+        <div style="display: grid; gap: 8px; font-size: 13px;">
+            <div><strong>Версия:</strong> ${info.version || 'N/A'}</div>
+            <div><strong>Время работы:</strong> ${info.uptime || 'N/A'}</div>
+            <div><strong>База данных:</strong> ${info.database_status || 'N/A'}</div>
+            <div><strong>Активных соединений:</strong> ${info.active_connections || 'N/A'}</div>
+            <div><strong>Использование памяти:</strong> ${info.memory_usage || 'N/A'}</div>
+            <div><strong>Последний перезапуск:</strong> ${info.last_restart ? new Date(info.last_restart).toLocaleString('ru-RU') : 'N/A'}</div>
+        </div>
+    `;
+    document.getElementById('system-info').innerHTML = html;
+}
+
+async function createBackup() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/backup/create'), {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) throw new Error('Ошибка создания бэкапа');
+        
+        const result = await response.json();
+        
+        const msg = document.getElementById('backup-msg');
+        msg.textContent = `Бэкап создан: ${result.filename}`;
+        msg.style.color = 'var(--primary-600)';
+        
+        // Обновляем информацию о последнем бэкапе
+        document.getElementById('last-backup').textContent = new Date().toLocaleString('ru-RU');
+        
+    } catch (error) {
+        console.error('Ошибка создания бэкапа:', error);
+        const msg = document.getElementById('backup-msg');
+        msg.textContent = 'Ошибка: ' + error.message;
+        msg.style.color = 'var(--err)';
+    }
+}
+
+async function downloadBackup() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/backup/download'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) throw new Error('Ошибка скачивания бэкапа');
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `qrpayhub-backup-${new Date().toISOString().split('T')[0]}.sql`;
+        a.click();
+        window.URL.revokeObjectURL(url);
+        
+    } catch (error) {
+        console.error('Ошибка скачивания бэкапа:', error);
+        const msg = document.getElementById('backup-msg');
+        msg.textContent = 'Ошибка скачивания: ' + error.message;
+        msg.style.color = 'var(--err)';
+    }
+}
+</script>
+{% endblock %}

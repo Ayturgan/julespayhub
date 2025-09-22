@@ -1,0 +1,262 @@
+/* QRPayHub Merchant Panel Styles */
+
+body { 
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Layout с боковой панелью */
+.merchant-layout {
+    display: flex;
+    height: 100vh;
+}
+
+/* Боковая панель */
+.sidebar {
+    width: 260px;
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+}
+
+.sidebar-header {
+    padding: 20px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.brand { 
+    display: flex; 
+    align-items: center; 
+    gap: 12px; 
+}
+
+.brand-badge { 
+    width: 40px; 
+    height: 40px; 
+    border-radius: 10px; 
+    background: var(--primary-600); 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    font-weight: 800; 
+    color: #ffffff; 
+    font-size: 16px;
+}
+
+.brand-text h1 {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0;
+}
+
+.brand-text .muted {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+/* Навигация в сайдбаре */
+.sidebar-nav {
+    flex: 1;
+    padding: 16px 0;
+    overflow-y: auto;
+}
+
+.nav-link {
+    display: block;
+    padding: 12px 20px;
+    color: var(--text-primary);
+    text-decoration: none;
+    transition: all 0.2s ease;
+    border-left: 3px solid transparent;
+    font-size: 14px;
+}
+
+.nav-link:hover {
+    background: var(--bg-tertiary);
+    border-left-color: var(--primary-600);
+}
+
+.nav-link.active {
+    background: var(--primary-600);
+    color: #ffffff;
+    border-left-color: var(--primary-500);
+    font-weight: 500;
+}
+
+/* Основной контент */
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Топ-бар */
+.top-bar {
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+    padding: 16px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.page-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 0;
+}
+
+.top-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.user-info {
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+/* Контент */
+.content-area {
+    flex: 1;
+    padding: 24px;
+    overflow-y: auto;
+    background: var(--bg-primary);
+}
+
+/* Секции */
+.section {
+    display: none;
+}
+
+.section.active {
+    display: block;
+}
+
+/* QR коды */
+.qr-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 20px;
+    margin-top: 20px;
+}
+
+.qr-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    transition: all 0.2s ease;
+}
+
+.qr-card:hover {
+    border-color: var(--primary-600);
+    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.1);
+}
+
+.qr-image {
+    text-align: center;
+    margin-bottom: 16px;
+}
+
+.qr-image img {
+    max-width: 200px;
+    height: auto;
+    border-radius: 8px;
+}
+
+.qr-details h3 {
+    margin: 0 0 8px 0;
+    color: var(--text-primary);
+}
+
+.qr-details p {
+    margin: 4px 0;
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.qr-actions {
+    margin-top: 16px;
+    display: flex;
+    gap: 8px;
+}
+
+/* Статистика */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    margin-bottom: 30px;
+}
+
+.stat-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--primary-600);
+    margin-bottom: 8px;
+}
+
+.stat-label {
+    color: var(--text-secondary);
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+/* Мобильная адаптация */
+@media (max-width: 768px) {
+    .merchant-layout {
+        flex-direction: column;
+    }
+    
+    .sidebar {
+        width: 100%;
+        height: auto;
+    }
+    
+    .sidebar-nav {
+        display: flex;
+        overflow-x: auto;
+        padding: 8px;
+    }
+    
+    .nav-link {
+        white-space: nowrap;
+        padding: 8px 16px;
+        border-left: none;
+        border-bottom: 3px solid transparent;
+    }
+    
+    .nav-link:hover,
+    .nav-link.active {
+        border-left: none;
+        border-bottom-color: var(--primary-600);
+    }
+    
+    .content-area {
+        padding: 16px;
+    }
+    
+    .qr-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+

@@ -1,0 +1,440 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Профиль администратора{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="mb-6">
+        <h1>Профиль администратора</h1>
+        <p class="text-secondary">Управление личными данными и настройками</p>
+    </div>
+
+    <!-- Статус профиля -->
+    <div id="profile-status" class="card mb-6" style="border-left: 4px solid var(--primary-600);">
+        <div id="status-text">
+            <span class="status-icon">⚠️</span> Загрузка статуса профиля...
+        </div>
+    </div>
+
+    <!-- Основная информация -->
+    <div class="grid cols-2 mb-6">
+        <div class="card">
+            <h2>Основная информация</h2>
+            <form id="profile-form">
+                <label>Имя пользователя</label>
+                <input type="text" id="username" class="form-input" readonly>
+                
+                <label>Email</label>
+                <input type="email" id="email" class="form-input" readonly>
+                
+                <label>Полное имя</label>
+                <input type="text" id="full_name" class="form-input" readonly>
+                
+                <label>Телефон</label>
+                <input type="tel" id="phone" class="form-input" placeholder="+996700123456" readonly>
+                
+                <label>Название организации</label>
+                <input type="text" id="organization_name" class="form-input" placeholder="ООО Моя Компания" readonly>
+                
+                <label>ИНН</label>
+                <input type="text" id="inn" class="form-input" placeholder="1234567890" readonly>
+                
+                <label>Адрес</label>
+                <textarea id="address" class="form-input" placeholder="г. Бишкек, ул. Примерная, д. 1" readonly></textarea>
+            </form>
+        </div>
+        
+        <div class="card">
+            <h2>Банковские реквизиты</h2>
+            <form id="banking-form">
+                <label>Номер счета</label>
+                <input type="text" id="bank_account" class="form-input" placeholder="1234567890123456" readonly>
+                
+                <label>Банк</label>
+                <select id="bank_select" class="form-input" disabled>
+                    <option value="">Выберите банк</option>
+                </select>
+                
+                <label>Название банка</label>
+                <input type="text" id="bank_name" class="form-input" placeholder="Оптима Банк" readonly>
+                
+                <label>БИК банка</label>
+                <input type="text" id="bank_bik" class="form-input" placeholder="123456" readonly>
+                
+                <label>Код банка для QR</label>
+                <input type="text" id="bank_code" class="form-input" placeholder="OPTIMA" readonly>
+            </form>
+        </div>
+    </div>
+
+    <!-- Кнопки управления -->
+    <div class="card">
+        <div style="display: flex; gap: 12px; align-items: center; justify-content: space-between;">
+            <div>
+                <h3 style="margin: 0;">Управление профилем</h3>
+                <p class="text-secondary" style="margin: 4px 0 0 0;">Редактирование и сохранение данных</p>
+            </div>
+            <button id="edit-toggle-btn" class="btn primary" onclick="toggleEditMode()">
+                <span id="edit-btn-text">📝 Редактировать профиль</span>
+            </button>
+        </div>
+        
+        <!-- Кнопки сохранения (скрыты по умолчанию) -->
+        <div id="edit-buttons" style="display: none; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+            <div style="display: flex; gap: 12px; justify-content: flex-end;">
+                <button type="button" class="btn" onclick="cancelEdit()">
+                    ❌ Отменить
+                </button>
+                <button type="button" class="btn primary" onclick="saveProfile()">
+                    <span id="save-text">💾 Сохранить изменения</span>
+                </button>
+            </div>
+        </div>
+        
+        <div id="save-message" style="margin-top: 12px;"></div>
+    </div>
+</div>
+
+<script>
+let isLoading = false;
+let isEditMode = false;
+let originalData = {};
+
+// Глобальная переменная для хранения списка банков
+let banks = [];
+
+// Загрузка данных при инициализации
+document.addEventListener('DOMContentLoaded', function() {
+    loadProfile();
+    loadBanks();
+    
+    // Обработчик изменения выбранного банка
+    document.getElementById('bank_select').addEventListener('change', function(e) {
+        const selectedBank = banks.find(bank => bank.id == e.target.value);
+        if (selectedBank) {
+            document.getElementById('bank_name').value = selectedBank.name;
+            document.getElementById('bank_bik').value = selectedBank.bik || '';
+            document.getElementById('bank_code').value = selectedBank.code;
+        } else {
+            document.getElementById('bank_name').value = '';
+            document.getElementById('bank_bik').value = '';
+            document.getElementById('bank_code').value = '';
+        }
+    });
+});
+
+function toggleEditMode() {
+    isEditMode = !isEditMode;
+    
+    const editButton = document.getElementById('edit-toggle-btn');
+    const editButtonText = document.getElementById('edit-btn-text');
+    const editButtons = document.getElementById('edit-buttons');
+    
+    // Получаем все поля формы
+    const editableFields = [
+        'phone', 'organization_name', 'inn', 'address',
+        'bank_account', 'bank_name', 'bank_bik', 'bank_code'
+    ];
+    
+    const bankSelect = document.getElementById('bank_select');
+    
+    if (isEditMode) {
+        // Входим в режим редактирования
+        editButtonText.textContent = '⏸️ Отменить редактирование';
+        editButtons.style.display = 'block';
+        
+        // Сохраняем оригинальные данные
+        saveOriginalData();
+        
+        // Включаем редактирование полей
+        editableFields.forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (field) field.removeAttribute('readonly');
+        });
+        
+        bankSelect.removeAttribute('disabled');
+        
+    } else {
+        // Выходим из режима редактирования
+        editButtonText.textContent = '📝 Редактировать профиль';
+        editButtons.style.display = 'none';
+        
+        // Отключаем редактирование полей
+        editableFields.forEach(fieldId => {
+            const field = document.getElementById(fieldId);
+            if (field) field.setAttribute('readonly', 'readonly');
+        });
+        
+        bankSelect.setAttribute('disabled', 'disabled');
+    }
+}
+
+function saveOriginalData() {
+    // Сохраняем текущие значения для возможности отмены
+    originalData = {
+        phone: document.getElementById('phone').value,
+        organization_name: document.getElementById('organization_name').value,
+        inn: document.getElementById('inn').value,
+        address: document.getElementById('address').value,
+        bank_account: document.getElementById('bank_account').value,
+        bank_name: document.getElementById('bank_name').value,
+        bank_bik: document.getElementById('bank_bik').value,
+        bank_code: document.getElementById('bank_code').value
+    };
+}
+
+function cancelEdit() {
+    // Восстанавливаем оригинальные данные
+    Object.keys(originalData).forEach(key => {
+        const element = document.getElementById(key);
+        if (element) {
+            if (element.type === 'checkbox') {
+                element.checked = originalData[key];
+            } else {
+                element.value = originalData[key];
+            }
+        }
+    });
+    
+    // Выходим из режима редактирования
+    toggleEditMode();
+    clearMessage();
+}
+
+async function loadBanks() {
+    try {
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/banks/dropdown'));
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки списка банков');
+        }
+        
+        const data = await response.json();
+        banks = data.banks || [];
+        
+        const bankSelect = document.getElementById('bank_select');
+        bankSelect.innerHTML = '<option value="">Выберите банк</option>';
+        
+        banks.forEach(bank => {
+            const option = document.createElement('option');
+            option.value = bank.id;
+            option.textContent = `${bank.name} (${bank.code})`;
+            bankSelect.appendChild(option);
+        });
+        
+    } catch (error) {
+        console.error('Ошибка загрузки банков:', error);
+        showMessage('Ошибка загрузки списка банков: ' + error.message, 'error');
+    }
+}
+
+async function loadProfile() {
+    if (isLoading) return;
+    
+    setLoading(true);
+    
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin-auth/me'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) throw new Error('Ошибка загрузки профиля');
+        
+        const admin = await response.json();
+        
+        // Заполняем основную информацию
+        document.getElementById('username').value = admin.username || '';
+        document.getElementById('email').value = admin.email || '';
+        document.getElementById('full_name').value = admin.full_name || '';
+        document.getElementById('phone').value = admin.phone || '';
+        document.getElementById('organization_name').value = admin.organization_name || '';
+        document.getElementById('inn').value = admin.inn || '';
+        document.getElementById('address').value = admin.address || '';
+        
+        // Заполняем банковские реквизиты
+        document.getElementById('bank_account').value = admin.bank_account || '';
+        document.getElementById('bank_name').value = admin.bank_name || '';
+        document.getElementById('bank_bik').value = admin.bank_bik || '';
+        document.getElementById('bank_code').value = admin.bank_code || '';
+        
+        // Устанавливаем выбранный банк в выпадающем списке
+        if (admin.bank_name && banks.length > 0) {
+            const selectedBank = banks.find(bank => bank.name === admin.bank_name);
+            if (selectedBank) {
+                document.getElementById('bank_select').value = selectedBank.id;
+            }
+        }
+        
+        // Обновляем статус профиля
+        updateProfileStatus(admin.has_complete_profile);
+        
+    } catch (error) {
+        console.error('Ошибка загрузки профиля:', error);
+        showMessage('Ошибка загрузки профиля: ' + error.message, 'error');
+    } finally {
+        setLoading(false);
+    }
+}
+
+async function saveProfile() {
+    if (isLoading) return;
+    
+    setLoading(true);
+    clearMessage();
+    
+    try {
+        // Собираем данные из форм
+        const profileData = {
+            phone: document.getElementById('phone').value.trim() || null,
+            organization_name: document.getElementById('organization_name').value.trim() || null,
+            inn: document.getElementById('inn').value.trim() || null,
+            address: document.getElementById('address').value.trim() || null,
+            bank_account: document.getElementById('bank_account').value.trim() || null,
+            bank_name: document.getElementById('bank_name').value.trim() || null,
+            bank_bik: document.getElementById('bank_bik').value.trim() || null,
+            bank_code: document.getElementById('bank_code').value.trim() || null
+        };
+        
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin-auth/me'), {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(profileData)
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Ошибка сохранения профиля');
+        }
+        
+        const updatedAdmin = await response.json();
+        
+        // Обновляем статус профиля
+        updateProfileStatus(updatedAdmin.has_complete_profile);
+        
+        showMessage('Профиль успешно сохранен!', 'success');
+        
+        // Выходим из режима редактирования
+        if (isEditMode) {
+            toggleEditMode();
+        }
+        
+    } catch (error) {
+        console.error('Ошибка сохранения профиля:', error);
+        showMessage('Ошибка сохранения: ' + error.message, 'error');
+    } finally {
+        setLoading(false);
+    }
+}
+
+function updateProfileStatus(isComplete) {
+    const statusElement = document.getElementById('profile-status');
+    const statusText = document.getElementById('status-text');
+    
+    if (isComplete) {
+        statusElement.style.borderLeftColor = '#10b981';
+        statusText.innerHTML = '<span class="status-icon">✅</span> Профиль заполнен. Вы можете создавать QR-коды.';
+    } else {
+        statusElement.style.borderLeftColor = '#f59e0b';
+        statusText.innerHTML = '<span class="status-icon">⚠️</span> Профиль не заполнен. Для создания QR-кодов необходимо указать банковские реквизиты.';
+    }
+}
+
+function setLoading(loading) {
+    isLoading = loading;
+    const saveText = document.getElementById('save-text');
+    if (loading) {
+        saveText.textContent = '⏳ Сохранение...';
+    } else {
+        saveText.textContent = '💾 Сохранить изменения';
+    }
+}
+
+function showMessage(message, type = 'info') {
+    const messageElement = document.getElementById('save-message');
+    messageElement.textContent = message;
+    messageElement.className = type === 'error' ? 'error' : 'success';
+    messageElement.style.display = 'block';
+}
+
+function clearMessage() {
+    const messageElement = document.getElementById('save-message');
+    messageElement.style.display = 'none';
+}
+
+// Утилиты
+function showError(message) {
+    showMessage(message, 'error');
+}
+
+function showSuccess(message) {
+    showMessage(message, 'success');
+}
+</script>
+
+<style>
+/* Дополнительные стили для профиля админа */
+.form-input {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--input-bg);
+    color: var(--text-primary);
+    font-size: 14px;
+    transition: border-color 0.2s ease;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary-600);
+    box-shadow: 0 0 0 3px rgba(5, 150, 105, 0.1);
+}
+
+.form-input:readonly {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    cursor: not-allowed;
+}
+
+.status-icon {
+    font-size: 16px;
+    margin-right: 8px;
+}
+
+.success {
+    background: #dcfce7;
+    color: #166534;
+    padding: 12px;
+    border-radius: 8px;
+    margin: 12px 0;
+    border: 1px solid #bbf7d0;
+}
+
+.error {
+    background: #fee2e2;
+    color: #dc2626;
+    padding: 12px;
+    border-radius: 8px;
+    margin: 12px 0;
+    border: 1px solid #fecaca;
+}
+
+/* Адаптивность */
+@media (max-width: 768px) {
+    .grid.cols-2 {
+        grid-template-columns: 1fr;
+    }
+    
+    .container {
+        padding: 0 16px;
+    }
+}
+</style>
+{% endblock %}
+
+</style>

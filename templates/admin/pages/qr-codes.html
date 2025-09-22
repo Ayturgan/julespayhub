@@ -1,0 +1,581 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}QR-коды{% endblock %}
+{% block page_title %}QR-коды{% endblock %}
+{% block page_subtitle %}Управление QR-кодами для приема платежей{% endblock %}
+
+{% block content %}
+<!-- Заголовок с действиями -->
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px;">
+    <div>
+        <h2 class="mb-2">QR-коды администратора</h2>
+        <div class="muted">Создавайте QR-коды для приема платежей от клиентов</div>
+    </div>
+    
+    <div style="display: flex; gap: 12px; align-items: center;">
+        <button class="btn" onclick="loadQRCodes()">🔄 Обновить</button>
+        <button class="btn primary" onclick="showCreateQRModal()">📱 Создать QR</button>
+    </div>
+</div>
+
+<!-- Фильтры -->
+<div class="card" style="margin-bottom: 32px;">
+    <div style="display: flex; gap: 20px; align-items: end; flex-wrap: wrap;">
+        <div class="form-group" style="margin-bottom: 0;">
+            <label>Статус</label>
+            <select id="status-filter" onchange="applyFilters()">
+                <option value="">Все статусы</option>
+                <option value="active">Активные</option>
+                <option value="inactive">Неактивные</option>
+                <option value="expired">Истекшие</option>
+            </select>
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 0;">
+            <label>Поиск</label>
+            <input type="search" id="search-input" placeholder="По названию..." onkeyup="applyFilters()" style="width: 250px;">
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 0;">
+            <label>Сортировка</label>
+            <select id="sort-filter" onchange="applyFilters()">
+                <option value="created_desc">Сначала новые</option>
+                <option value="created_asc">Сначала старые</option>
+                <option value="amount_desc">По сумме (большие)</option>
+                <option value="amount_asc">По сумме (малые)</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<!-- Загрузка -->
+<div id="qr-codes-loading" class="loading" style="padding: 60px; text-align: center; font-size: 16px;">Загрузка QR-кодов...</div>
+
+<!-- Список QR-кодов -->
+<div id="qr-codes-content" style="display: none;">
+    <div class="grid cols-3" id="qr-codes-grid">
+        <!-- QR-коды будут загружены -->
+    </div>
+</div>
+
+<!-- Пагинация -->
+<div id="pagination-container" style="display: flex; justify-content: center; margin-top: 32px; margin-bottom: 16px;">
+    <div style="display: flex; gap: 8px;" id="pagination-buttons">
+        <!-- Кнопки пагинации будут добавлены динамически -->
+    </div>
+</div>
+
+<!-- Модальное окно создания QR -->
+<div id="create-qr-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: var(--bg-secondary); padding: 24px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">Создать новый QR-код</h3>
+            <button onclick="hideCreateQRModal()" style="background: none; border: none; font-size: 20px; cursor: pointer;">✕</button>
+        </div>
+        
+        <form id="create-qr-form">
+            <div class="form-group">
+                <label>Название QR-кода *</label>
+                <input type="text" id="qr-name" required placeholder="Например: Обед в кафе">
+            </div>
+            
+            <div class="form-group">
+                <label>Сумма (KGS)</label>
+                <input type="number" id="qr-amount" min="0" step="0.01" placeholder="Оставьте пустым для произвольной суммы">
+                <small class="help-text">Если не указана - покупатель введет сумму сам</small>
+            </div>
+            
+            <div class="form-group">
+                <label>Описание</label>
+                <textarea id="qr-description" rows="3" placeholder="Описание платежа или услуги"></textarea>
+            </div>
+            
+            <div class="form-group">
+                <label>Максимальное количество использований</label>
+                <input type="number" id="qr-max-uses" min="1" placeholder="Оставьте пустым для неограниченного использования">
+                <small class="help-text">Если не указано - QR-код можно использовать неограниченное количество раз</small>
+            </div>
+            
+            <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+                <button type="button" class="btn" onclick="hideCreateQRModal()">Отменить</button>
+                <button type="submit" class="btn primary">Создать QR-код</button>
+            </div>
+        </form>
+        
+        <div id="create-qr-message" style="margin-top: 12px;"></div>
+    </div>
+</div>
+
+<!-- Модальное окно просмотра QR -->
+<div id="view-qr-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: var(--bg-secondary); padding: 24px; border-radius: 12px; max-width: 500px; width: 90%; text-align: center;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">QR-код</h3>
+            <button onclick="hideViewQRModal()" style="background: none; border: none; font-size: 20px; cursor: pointer;">✕</button>
+        </div>
+        
+        <div id="qr-code-image" style="margin: 20px 0;">
+            <!-- QR-код будет загружен -->
+        </div>
+        
+        <div id="qr-code-info" style="margin: 20px 0; text-align: left;">
+            <!-- Информация о QR-коде -->
+        </div>
+        
+        <div style="display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;">
+            <button class="btn" onclick="copyQRLink(currentQRCode?.qr_token)">📋 Копировать ссылку</button>
+            <button class="btn primary" onclick="openPaymentPage(currentQRCode?.qr_token)">💳 Оплатить</button>
+            <button class="btn" onclick="downloadQRImage()">💾 Скачать</button>
+            <button class="btn" onclick="hideViewQRModal()">Закрыть</button>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentPage = 1;
+let pageSize = 12;
+let allQRCodes = [];
+let filteredQRCodes = [];
+let currentQRCode = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadQRCodes();
+    
+    // Обработчик формы создания QR
+    document.getElementById('create-qr-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        createQRCode();
+    });
+});
+
+async function loadQRCodes() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        if (!token) {
+            showAlert('Требуется авторизация', 'error');
+            return;
+        }
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/qr-codes'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка загрузки QR-кодов');
+        }
+        
+        allQRCodes = await response.json();
+        filteredQRCodes = [...allQRCodes];
+        
+        displayQRCodes();
+        updatePagination();
+        
+        document.getElementById('qr-codes-loading').style.display = 'none';
+        document.getElementById('qr-codes-content').style.display = 'block';
+        
+    } catch (error) {
+        console.error('Ошибка загрузки QR-кодов:', error);
+        showAlert('Ошибка загрузки QR-кодов: ' + error.message, 'error');
+    }
+}
+
+function displayQRCodes() {
+    const grid = document.getElementById('qr-codes-grid');
+    const startIndex = (currentPage - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const qrCodes = filteredQRCodes.slice(startIndex, endIndex);
+    
+    if (qrCodes.length === 0) {
+        grid.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; padding: 40px; color: var(--text-secondary);">Нет QR-кодов</div>';
+        return;
+    }
+    
+    grid.innerHTML = qrCodes.map(qr => `
+        <div class="card" style="position: relative;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                <div>
+                    <h4 style="margin: 0 0 4px 0;">${qr.name}</h4>
+                    <div class="text-sm muted">${qr.description || 'Без описания'}</div>
+                </div>
+                <span class="badge ${getQRStatusBadgeClass(qr)}">${getQRStatusText(qr)}</span>
+            </div>
+            
+            <div style="margin-bottom: 12px;">
+                <div style="font-size: 18px; font-weight: bold; color: var(--primary-600);">
+                    ${qr.amount ? formatAmount(qr.amount) : 'Произвольная'} ${qr.currency || 'KGS'}
+                </div>
+                ${qr.qr_image_base64 ? `
+                    <div style="margin-top: 8px; text-align: center;">
+                        <img src="${qr.qr_image_base64}" alt="QR Code" style="width: 80px; height: 80px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                ` : ''}
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; font-size: 12px; color: var(--text-secondary);">
+                <div>Создан: ${formatDate(qr.created_at)}</div>
+                ${qr.expires_at ? `<div>Истекает: ${formatDate(qr.expires_at)}</div>` : ''}
+            </div>
+            
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="btn-table primary" onclick="viewQRCode(${qr.id})" title="Показать QR">👁️</button>
+                <button class="btn-table secondary" onclick="copyQRLink('${qr.token}')" title="Копировать ссылку">📋</button>
+                <button class="btn-table success" onclick="openPaymentPage('${qr.token}')" title="Оплатить">💳</button>
+                <button class="btn-table secondary" onclick="downloadQRImage(${qr.id})" title="Скачать">💾</button>
+                <button class="btn-table danger" onclick="deleteQRCode(${qr.id})" title="Удалить">🗑️</button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function updatePagination() {
+    const totalPages = Math.ceil(filteredQRCodes.length / pageSize);
+    const buttonsContainer = document.getElementById('pagination-buttons');
+    buttonsContainer.innerHTML = '';
+    
+    if (totalPages > 1) {
+        if (currentPage > 1) {
+            buttonsContainer.innerHTML += `<button class="btn" onclick="changePage(${currentPage - 1})">← Предыдущая</button>`;
+        }
+        
+        for (let i = Math.max(1, currentPage - 2); i <= Math.min(totalPages, currentPage + 2); i++) {
+            const isActive = i === currentPage ? 'primary' : '';
+            buttonsContainer.innerHTML += `<button class="btn ${isActive}" onclick="changePage(${i})">${i}</button>`;
+        }
+        
+        if (currentPage < totalPages) {
+            buttonsContainer.innerHTML += `<button class="btn" onclick="changePage(${currentPage + 1})">Следующая →</button>`;
+        }
+    }
+}
+
+function changePage(page) {
+    currentPage = page;
+    displayQRCodes();
+    updatePagination();
+}
+
+function applyFilters() {
+    const statusFilter = document.getElementById('status-filter').value;
+    const searchTerm = document.getElementById('search-input').value.toLowerCase();
+    const sortFilter = document.getElementById('sort-filter').value;
+    
+    filteredQRCodes = allQRCodes.filter(qr => {
+        const matchesStatus = !statusFilter || getQRStatus(qr) === statusFilter;
+        const matchesSearch = !searchTerm || 
+            qr.name.toLowerCase().includes(searchTerm) ||
+            (qr.description && qr.description.toLowerCase().includes(searchTerm));
+        
+        return matchesStatus && matchesSearch;
+    });
+    
+    // Сортировка
+    filteredQRCodes.sort((a, b) => {
+        switch (sortFilter) {
+            case 'created_desc':
+                return new Date(b.created_at) - new Date(a.created_at);
+            case 'created_asc':
+                return new Date(a.created_at) - new Date(b.created_at);
+            case 'amount_desc':
+                return b.amount - a.amount;
+            case 'amount_asc':
+                return a.amount - b.amount;
+            default:
+                return 0;
+        }
+    });
+    
+    currentPage = 1;
+    displayQRCodes();
+    updatePagination();
+}
+
+// Модальные окна
+function showCreateQRModal() {
+    document.getElementById('create-qr-modal').style.display = 'flex';
+}
+
+function hideCreateQRModal() {
+    document.getElementById('create-qr-modal').style.display = 'none';
+    document.getElementById('create-qr-form').reset();
+    document.getElementById('create-qr-message').textContent = '';
+}
+
+async function createQRCode() {
+    const name = document.getElementById('qr-name').value.trim();
+    const amount = document.getElementById('qr-amount').value;
+    const description = document.getElementById('qr-description').value.trim();
+    const maxUses = document.getElementById('qr-max-uses').value;
+    
+    if (!name) {
+        showMessage('Заполните название QR-кода', 'error');
+        return;
+    }
+    
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch('/api/v1/admin/qr-codes', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                name: name,
+                amount: amount ? parseFloat(amount) : null,
+                description: description,
+                max_uses: maxUses ? parseInt(maxUses) : null,
+                expires_in_minutes: 60
+            })
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка создания QR-кода');
+        }
+        
+        const result = await response.json();
+        showMessage('QR-код успешно создан!', 'success');
+        
+        setTimeout(() => {
+            hideCreateQRModal();
+            loadQRCodes();
+        }, 1500);
+        
+    } catch (error) {
+        console.error('Ошибка создания QR-кода:', error);
+        showMessage('Ошибка: ' + error.message, 'error');
+    }
+}
+
+async function viewQRCode(qrId) {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/qr-codes/${qrId}`), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка загрузки QR-кода');
+        }
+        
+        const qrCode = await response.json();
+        currentQRCode = qrCode;
+        
+        showViewQRModal(qrCode);
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        showAlert('❌ Ошибка: ' + error.message, 'error');
+    }
+}
+
+function showViewQRModal(qrCode) {
+    const modal = document.getElementById('view-qr-modal');
+    const imageContainer = document.getElementById('qr-code-image');
+    const infoContainer = document.getElementById('qr-code-info');
+    
+    // Сохраняем текущий QR-код для использования в кнопках
+    currentQRCode = qrCode;
+    
+    // Показываем QR-код
+    if (qrCode.qr_image_base64) {
+        imageContainer.innerHTML = `
+            <div style="background: white; padding: 20px; border-radius: 8px; display: inline-block;">
+                <img src="${qrCode.qr_image_base64}" alt="QR Code" style="width: 200px; height: 200px;">
+            </div>
+        `;
+    } else {
+        // Fallback - загружаем изображение через API
+        imageContainer.innerHTML = `
+            <div style="background: white; padding: 20px; border-radius: 8px; display: inline-block;">
+                <img src="/api/v1/admin/qr-codes/${qrCode.id}/qr-image" alt="QR Code" style="width: 200px; height: 200px;">
+            </div>
+        `;
+    }
+    
+    // Информация о QR-коде
+    infoContainer.innerHTML = `
+        <div style="background: var(--bg-tertiary); padding: 16px; border-radius: 8px;">
+            <div style="margin-bottom: 8px;"><strong>Название:</strong> ${qrCode.name}</div>
+            <div style="margin-bottom: 8px;"><strong>Сумма:</strong> ${qrCode.amount ? formatAmount(qrCode.amount) : 'Произвольная'} ${qrCode.currency || 'KGS'}</div>
+            <div style="margin-bottom: 8px;"><strong>Статус:</strong> <span class="badge ${getQRStatusBadgeClass(qrCode)}">${getQRStatusText(qrCode)}</span></div>
+            <div style="margin-bottom: 8px;"><strong>Создан:</strong> ${formatDateTime(qrCode.created_at)}</div>
+            ${qrCode.expires_at ? `<div style="margin-bottom: 8px;"><strong>Истекает:</strong> ${formatDateTime(qrCode.expires_at)}</div>` : ''}
+            ${qrCode.description ? `<div><strong>Описание:</strong> ${qrCode.description}</div>` : ''}
+        </div>
+    `;
+    
+    modal.style.display = 'flex';
+}
+
+function hideViewQRModal() {
+    document.getElementById('view-qr-modal').style.display = 'none';
+    currentQRCode = null;
+}
+
+function openPaymentPage(qrToken) {
+    if (!qrToken) {
+        showAlert('Ошибка: токен не найден', 'error');
+        return;
+    }
+    
+    const paymentUrl = `${window.SIMULATION_URL_TEMPLATE}bank-selection?token=${qrToken}`;
+    window.open(paymentUrl, '_blank');
+}
+
+function copyQRLink(qrToken) {
+    // Если передан токен, используем его, иначе используем текущий QR код
+    let token = qrToken;
+    if (!token && currentQRCode) {
+        token = currentQRCode.qr_token;
+    }
+    
+    if (!token) {
+        showAlert('Ошибка: токен не найден', 'error');
+        return;
+    }
+    
+    const link = `${window.SIMULATION_URL_TEMPLATE}bank-selection?token=${token}`;
+    navigator.clipboard.writeText(link).then(() => {
+        showAlert('Ссылка скопирована в буфер обмена', 'success');
+    }).catch(() => {
+        // Fallback для старых браузеров
+        const textArea = document.createElement('textarea');
+        textArea.value = link;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        showAlert('Ссылка скопирована в буфер обмена', 'success');
+    });
+}
+
+async function downloadQRImage(qrId) {
+    try {
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/qr-codes/${qrId}/qr-image`));
+        const blob = await response.blob();
+        
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `qr-code-${qrId}.png`;
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+        
+        showAlert('QR-код скачан', 'success');
+        
+    } catch (error) {
+        console.error('Ошибка скачивания QR-кода:', error);
+        showAlert('Ошибка скачивания QR-кода', 'error');
+    }
+}
+
+async function deleteQRCode(qrId) {
+    if (!confirm('Вы уверены, что хотите удалить этот QR-код?')) {
+        return;
+    }
+    
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/qr-codes/${qrId}`), {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || errorData.message || 'Ошибка удаления QR-кода');
+        }
+        
+        const result = await response.json();
+        showAlert('✅ ' + (result.message || 'QR-код удален'), 'success');
+        loadQRCodes();
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        showAlert('❌ Ошибка: ' + error.message, 'error');
+    }
+}
+
+// Утилиты
+function getQRStatus(qr) {
+    // Проверяем статус из API
+    if (qr.status) {
+        if (qr.status === 'inactive') return 'inactive';
+        if (qr.status === 'active') {
+            // Если активен, проверяем срок действия
+            if (qr.expires_at && new Date(qr.expires_at) < new Date()) return 'expired';
+            return 'active';
+        }
+    }
+    
+    // Fallback для старых данных
+    if (!qr.is_active) return 'inactive';
+    if (qr.expires_at && new Date(qr.expires_at) < new Date()) return 'expired';
+    return 'active';
+}
+
+function getQRStatusBadgeClass(qr) {
+    const status = getQRStatus(qr);
+    const classes = {
+        'active': 'ok',
+        'inactive': 'err',
+        'expired': 'warn'
+    };
+    return classes[status] || 'info';
+}
+
+function getQRStatusText(qr) {
+    const status = getQRStatus(qr);
+    const texts = {
+        'active': 'Активен',
+        'inactive': 'Неактивен',
+        'expired': 'Истек'
+    };
+    return texts[status] || status;
+}
+
+function formatDate(dateString) {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('ru-RU');
+}
+
+function formatDateTime(dateString) {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleString('ru-RU');
+}
+
+function formatAmount(amount) {
+    return parseFloat(amount).toLocaleString('ru-RU', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+}
+
+function showMessage(message, type) {
+    showAlert(message, type);
+    
+    // Также показываем в модальном окне
+    const messageEl = document.getElementById('create-qr-message');
+    if (messageEl) {
+        messageEl.style.color = type === 'error' ? '#dc2626' : '#10b981';
+        messageEl.textContent = message;
+        
+        setTimeout(() => {
+            messageEl.textContent = '';
+        }, 5000);
+    }
+}
+
+function showError(message) {
+    showAlert(message, 'error');
+}
+</script>
+{% endblock %}

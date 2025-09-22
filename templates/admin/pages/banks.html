@@ -1,0 +1,677 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Банки{% endblock %}
+{% block page_title %}Управление банками{% endblock %}
+
+{% block content %}
+<div class="mb-6">
+    <p class="text-secondary">Управление банками-партнерами и их настройками</p>
+    <button class="btn primary" onclick="showAddBankModal()">+ Добавить банк</button>
+    <button class="btn" onclick="loadBanks()">🔄 Обновить</button>
+</div>
+
+<div id="banks-loading" class="loading">Загрузка банков...</div>
+
+<div id="banks-content" style="display: none;">
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>Название банка</th>
+                    <th>Код</th>
+                    <th>Статус</th>
+                    <th>API URL</th>
+                    <th>Создан</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody id="banks-table-body">
+                <!-- Данные будут загружены -->
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Модальное окно добавления банка -->
+<div id="add-bank-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center;">
+    <div style="background: var(--bg-secondary); padding: 24px; border-radius: 12px; max-width: 500px; width: 90%;">
+        <h3 style="margin-top: 0;">Добавить новый банк</h3>
+        <form id="add-bank-form">
+            <div class="grid cols-2" style="gap: 16px;">
+                <div>
+                    <label>Название банка *</label>
+                    <input type="text" id="bank-name" required>
+                </div>
+                <div>
+                    <label>Код банка *</label>
+                    <input type="text" id="bank-code" required placeholder="BANK">
+                </div>
+                <div style="grid-column: 1 / -1;">
+                    <label>API URL *</label>
+                    <input type="url" id="bank-api-url" required placeholder="https://api.bank.com">
+                </div>
+                <div style="grid-column: 1 / -1;">
+                    <label>Webhook URL</label>
+                    <input type="url" id="bank-webhook-url" placeholder="https://api.bank.com/webhook">
+                </div>
+                <div style="grid-column: 1 / -1;">
+                    <label>
+                        <input type="checkbox" id="bank-active" checked>
+                        Активен
+                    </label>
+                </div>
+            </div>
+            <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px;">
+                <button type="button" class="btn" onclick="hideAddBankModal()">Отменить</button>
+                <button type="submit" class="btn primary">Добавить банк</button>
+            </div>
+        </form>
+        <div id="add-bank-message" style="margin-top: 12px;"></div>
+    </div>
+</div>
+
+<div class="grid cols-3 mb-6">
+    <div class="card">
+        <h3>Общая статистика</h3>
+        <p class="text-secondary mb-4">Статистика по всем банкам</p>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span>Всего банков:</span>
+            <strong id="total-banks-count">0</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span>Активных:</span>
+            <strong style="color: var(--primary-600);" id="active-banks-count">0</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+            <span>Неактивных:</span>
+            <strong style="color: #dc2626;" id="inactive-banks-count">0</strong>
+        </div>
+    </div>
+    
+    <div class="card">
+        <h3>Производительность</h3>
+        <p class="text-secondary mb-4">Средние показатели</p>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span>Время ответа:</span>
+            <strong id="avg-response-time">0ms</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span>Успешность:</span>
+            <strong style="color: var(--primary-600);" id="success-rate">0%</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+            <span>Uptime:</span>
+            <strong id="uptime">0%</strong>
+        </div>
+    </div>
+    
+    <div class="card">
+        <h3>Транзакции сегодня</h3>
+        <p class="text-secondary mb-4">За последние 24 часа</p>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span>Успешных:</span>
+            <strong style="color: var(--primary-600);" id="today-successful">0</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span>Ошибок:</span>
+            <strong style="color: #dc2626;" id="today-errors">0</strong>
+        </div>
+        <div style="display: flex; justify-content: space-between;">
+            <span>Общий объем:</span>
+            <strong id="today-volume">0 KGS</strong>
+        </div>
+    </div>
+</div>
+
+<!-- Модальное окно для деталей банка -->
+<div id="bank-details-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 style="margin: 0;">Детали банка</h3>
+            <button class="modal-close" onclick="closeBankDetails()">&times;</button>
+        </div>
+        <div class="modal-body" id="bank-details-content">
+            <!-- Детали банка будут загружены -->
+        </div>
+    </div>
+</div>
+
+<style>
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.5);
+}
+
+.modal-content {
+    background-color: var(--bg-primary);
+    margin: 5% auto;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    width: 80%;
+    max-width: 600px;
+    border-radius: 8px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--bg-secondary);
+    border-radius: 8px 8px 0 0;
+}
+
+.modal-close {
+    color: var(--text-secondary);
+    font-size: 28px;
+    font-weight: bold;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.modal-close:hover {
+    color: var(--text-primary);
+}
+
+.modal-body {
+    padding: 20px;
+    background-color: var(--bg-primary);
+}
+
+.bank-details {
+    display: grid;
+    gap: 12px;
+}
+
+.detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.detail-row:last-child {
+    border-bottom: none;
+}
+
+.detail-row strong {
+    color: var(--text-primary);
+    min-width: 120px;
+}
+
+.edit-mode input {
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 14px;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.edit-mode textarea {
+    padding: 4px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 14px;
+    resize: vertical;
+    min-height: 60px;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.edit-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+    justify-content: flex-end;
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadBanks();
+    loadBankStatistics();
+    
+    // Обработчик формы добавления банка
+    document.getElementById('add-bank-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        addBank();
+    });
+});
+
+async function loadBanks() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        if (!token) {
+            window.location.href = '/admin/login';
+            return;
+        }
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/banks'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки банков');
+        }
+        
+        const responseData = await response.json();
+        const banks = responseData.banks || responseData || [];
+        displayBanks(banks);
+        
+        document.getElementById('banks-loading').style.display = 'none';
+        document.getElementById('banks-content').style.display = 'block';
+        
+    } catch (error) {
+        console.error('Ошибка загрузки банков:', error);
+        showError('Ошибка загрузки банков: ' + error.message);
+    }
+}
+
+async function loadBankStatistics() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        if (!token) {
+            window.location.href = '/admin/login';
+            return;
+        }
+        
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/statistics?metric=bank_stats'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки статистики банков');
+        }
+        
+        const stats = await response.json();
+        
+        // Обновляем статистику банков
+        document.getElementById('total-banks-count').textContent = stats.total_banks || 0;
+        document.getElementById('active-banks-count').textContent = stats.active_banks || 0;
+        document.getElementById('inactive-banks-count').textContent = (stats.total_banks || 0) - (stats.active_banks || 0);
+        
+        // Обновляем производительность
+        document.getElementById('avg-response-time').textContent = `${stats.avg_response_time || 0}ms`;
+        document.getElementById('success-rate').textContent = `${stats.success_rate || 0}%`;
+        document.getElementById('uptime').textContent = `${stats.uptime || 0}%`;
+        
+        // Обновляем транзакции сегодня
+        document.getElementById('today-successful').textContent = stats.today_successful || 0;
+        document.getElementById('today-errors').textContent = stats.today_errors || 0;
+        document.getElementById('today-volume').textContent = `${(stats.today_volume || 0).toLocaleString()} KGS`;
+        
+    } catch (error) {
+        console.error('Ошибка загрузки статистики банков:', error);
+        // Показываем заглушки при ошибке
+        document.getElementById('total-banks-count').textContent = 'N/A';
+        document.getElementById('active-banks-count').textContent = 'N/A';
+        document.getElementById('inactive-banks-count').textContent = 'N/A';
+        document.getElementById('avg-response-time').textContent = 'N/A';
+        document.getElementById('success-rate').textContent = 'N/A';
+        document.getElementById('uptime').textContent = 'N/A';
+        document.getElementById('today-successful').textContent = 'N/A';
+        document.getElementById('today-errors').textContent = 'N/A';
+        document.getElementById('today-volume').textContent = 'N/A';
+    }
+}
+
+async function viewBankDetails(bankId) {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/banks/${bankId}`), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка загрузки деталей банка');
+        }
+        
+        const bank = await response.json();
+        
+        const content = `
+            <div class="bank-details" id="bank-details-container">
+                <div class="detail-row">
+                    <strong>ID:</strong>
+                    <span id="bank-id">${bank.id}</span>
+                </div>
+                <div class="detail-row">
+                    <strong>Название:</strong>
+                    <span id="bank-name-display">${bank.name}</span>
+                </div>
+                <div class="detail-row">
+                    <strong>Код:</strong>
+                    <span id="bank-code-display">${bank.code}</span>
+                </div>
+                <div class="detail-row">
+                    <strong>БИК:</strong>
+                    <span id="bank-bik-display">${bank.bik || 'N/A'}</span>
+                </div>
+                <div class="detail-row">
+                    <strong>Статус:</strong>
+                    <span id="bank-status-display">
+                        <span class="badge ${bank.is_active ? 'ok' : 'err'}">${bank.is_active ? 'Активен' : 'Неактивен'}</span>
+                    </span>
+                </div>
+                <div class="detail-row">
+                    <strong>Webhook URL:</strong>
+                    <span id="bank-webhook-display">${bank.webhook_url || 'N/A'}</span>
+                </div>
+                <div class="detail-row">
+                    <strong>Разрешенные IP:</strong>
+                    <span id="bank-ips-display">${bank.allowed_ips || 'N/A'}</span>
+                </div>
+                <div class="detail-row">
+                    <strong>Создан:</strong>
+                    <span id="bank-created-display">${formatDate(bank.created_at)}</span>
+                </div>
+                <div class="detail-row">
+                    <strong>Последнее использование:</strong>
+                    <span id="bank-last-used-display">${bank.last_used_at ? formatDate(bank.last_used_at) : 'N/A'}</span>
+                </div>
+                
+                <div class="edit-actions">
+                    <button class="btn primary" onclick="toggleBankEdit()" id="edit-btn">✏️ Редактировать</button>
+                    <button class="btn secondary" onclick="saveBankChanges()" id="save-btn" style="display: none;">💾 Сохранить</button>
+                    <button class="btn danger" onclick="cancelBankEdit()" id="cancel-btn" style="display: none;">❌ Отмена</button>
+                </div>
+            </div>
+        `;
+        
+        document.getElementById('bank-details-content').innerHTML = content;
+        document.getElementById('bank-details-modal').style.display = 'block';
+        
+    } catch (error) {
+        console.error('Ошибка загрузки деталей банка:', error);
+        showError('Ошибка загрузки деталей банка: ' + error.message);
+    }
+}
+
+function closeBankDetails() {
+    document.getElementById('bank-details-modal').style.display = 'none';
+}
+
+function toggleBankEdit() {
+    const container = document.getElementById('bank-details-container');
+    const editBtn = document.getElementById('edit-btn');
+    const saveBtn = document.getElementById('save-btn');
+    const cancelBtn = document.getElementById('cancel-btn');
+    
+    // Переключаем в режим редактирования
+    container.classList.add('edit-mode');
+    editBtn.style.display = 'none';
+    saveBtn.style.display = 'inline-block';
+    cancelBtn.style.display = 'inline-block';
+    
+    // Заменяем поля на input
+    const nameSpan = document.getElementById('bank-name-display');
+    const codeSpan = document.getElementById('bank-code-display');
+    const bikSpan = document.getElementById('bank-bik-display');
+    const webhookSpan = document.getElementById('bank-webhook-display');
+    const ipsSpan = document.getElementById('bank-ips-display');
+    
+    nameSpan.innerHTML = `<input type="text" id="edit-bank-name" value="${nameSpan.textContent}">`;
+    codeSpan.innerHTML = `<input type="text" id="edit-bank-code" value="${codeSpan.textContent}">`;
+    bikSpan.innerHTML = `<input type="text" id="edit-bank-bik" value="${bikSpan.textContent}">`;
+    webhookSpan.innerHTML = `<input type="text" id="edit-bank-webhook" value="${webhookSpan.textContent}">`;
+    ipsSpan.innerHTML = `<textarea id="edit-bank-ips">${ipsSpan.textContent}</textarea>`;
+}
+
+function cancelBankEdit() {
+    const container = document.getElementById('bank-details-container');
+    const editBtn = document.getElementById('edit-btn');
+    const saveBtn = document.getElementById('save-btn');
+    const cancelBtn = document.getElementById('cancel-btn');
+    
+    // Возвращаем в режим просмотра
+    container.classList.remove('edit-mode');
+    editBtn.style.display = 'inline-block';
+    saveBtn.style.display = 'none';
+    cancelBtn.style.display = 'none';
+    
+    // Перезагружаем детали банка
+    const bankId = document.getElementById('bank-id').textContent;
+    viewBankDetails(bankId);
+}
+
+async function saveBankChanges() {
+    try {
+        const bankId = document.getElementById('bank-id').textContent;
+        const name = document.getElementById('edit-bank-name').value;
+        const code = document.getElementById('edit-bank-code').value;
+        const bik = document.getElementById('edit-bank-bik').value;
+        const webhook = document.getElementById('edit-bank-webhook').value;
+        const ips = document.getElementById('edit-bank-ips').value;
+        
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/banks/${bankId}`), {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                name: name,
+                code: code,
+                bik: bik,
+                webhook_url: webhook,
+                allowed_ips: ips
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка сохранения изменений');
+        }
+        
+        showMessage('Изменения сохранены!', 'success');
+        cancelBankEdit(); // Возвращаем в режим просмотра
+        
+    } catch (error) {
+        console.error('Ошибка сохранения изменений:', error);
+        showError('Ошибка сохранения: ' + error.message);
+    }
+}
+
+function displayBanks(banks) {
+    const tbody = document.getElementById('banks-table-body');
+    
+    if (banks.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center muted">Нет зарегистрированных банков</td></tr>';
+        return;
+    }
+    
+    tbody.innerHTML = banks.map(bank => `
+        <tr>
+            <td>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <strong>${bank.name}</strong>
+                </div>
+            </td>
+            <td style="font-family: monospace;">${bank.code}</td>
+            <td>
+                <span class="badge ${bank.is_active ? 'ok' : 'err'}">${bank.is_active ? 'Активен' : 'Неактивен'}</span>
+            </td>
+            <td style="font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis;">${bank.api_url || 'N/A'}</td>
+            <td>${formatDate(bank.created_at)}</td>
+            <td>
+                <div class="table-actions">
+                    <button class="btn-table ${bank.is_active ? 'danger' : 'primary'}" onclick="toggleBankStatus(${bank.id})" title="${bank.is_active ? 'Деактивировать' : 'Активировать'}">
+                        ${bank.is_active ? '⏸️' : '▶️'}
+                    </button>
+                    <button class="btn-table secondary" onclick="viewBankDetails('${bank.id}')" title="Детали">👁️</button>
+                    <button class="btn-table secondary" onclick="regenerateKeys(${bank.id})" title="Обновить ключи">🔄</button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function showAddBankModal() {
+    document.getElementById('add-bank-modal').style.display = 'flex';
+}
+
+function hideAddBankModal() {
+    document.getElementById('add-bank-modal').style.display = 'none';
+    document.getElementById('add-bank-form').reset();
+    document.getElementById('add-bank-message').textContent = '';
+}
+
+async function addBank() {
+    const name = document.getElementById('bank-name').value.trim();
+    const code = document.getElementById('bank-code').value.trim().toUpperCase();
+    const apiUrl = document.getElementById('bank-api-url').value.trim();
+    const webhookUrl = document.getElementById('bank-webhook-url').value.trim();
+    const isActive = document.getElementById('bank-active').checked;
+    
+    if (!name || !code || !apiUrl) {
+        showMessage('Заполните все обязательные поля', 'error');
+        return;
+    }
+    
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin/banks'), {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                name: name,
+                code: code,
+                api_url: apiUrl,
+                webhook_url: webhookUrl || null,
+                is_active: isActive
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Ошибка создания банка');
+        }
+        
+        const result = await response.json();
+        showMessage('Банк успешно добавлен!', 'success');
+        
+        // Перезагружаем список банков
+        setTimeout(() => {
+            hideAddBankModal();
+            loadBanks();
+        }, 1500);
+        
+    } catch (error) {
+        console.error('Ошибка добавления банка:', error);
+        showMessage('Ошибка: ' + error.message, 'error');
+    }
+}
+
+async function toggleBankStatus(bankId) {
+    if (!confirm('Изменить статус банка?')) return;
+    
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/banks/${bankId}/toggle`), {
+            method: 'PUT',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка изменения статуса банка');
+        }
+        
+        const result = await response.json();
+        alert('✅ ' + result.message);
+        loadBanks();
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('❌ Ошибка: ' + error.message);
+    }
+}
+
+async function regenerateKeys(bankId) {
+    if (!confirm('Сгенерировать новые ключи для банка? Старые ключи станут недействительными.')) return;
+    
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/banks/${bankId}/regenerate-keys`), {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error('Ошибка генерации ключей');
+        }
+        
+        const result = await response.json();
+        
+        // Показываем новые ключи в модальном окне
+        const modal = `
+            <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1001; display: flex; justify-content: center; align-items: center;">
+                <div style="background: var(--bg-secondary); padding: 24px; border-radius: 12px; max-width: 600px; width: 90%;">
+                    <h3 style="color: #dc2626;">⚠️ Новые ключи сгенерированы</h3>
+                    <p><strong>Сохраните эти данные сейчас - повторно показать их нельзя!</strong></p>
+                    <div style="background: var(--bg-tertiary); padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; margin: 16px 0;">
+                        <div><strong>API Key:</strong> ${result.api_key}</div>
+                        <div><strong>Secret:</strong> ${result.secret}</div>
+                    </div>
+                    <button class="btn primary" onclick="this.closest('[style*=fixed]').remove()">Понятно</button>
+                </div>
+            </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modal);
+        
+    } catch (error) {
+        console.error('Ошибка:', error);
+        alert('❌ Ошибка: ' + error.message);
+    }
+}
+
+function editBank(bankId) {
+    // TODO: Реализовать редактирование банка
+    alert('🚧 Функция редактирования будет реализована в следующей версии');
+}
+
+function formatDate(dateString) {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('ru-RU');
+}
+
+function showMessage(message, type) {
+    const messageEl = document.getElementById('add-bank-message');
+    messageEl.style.color = type === 'error' ? '#dc2626' : '#10b981';
+    messageEl.textContent = message;
+    
+    setTimeout(() => {
+        messageEl.textContent = '';
+    }, 5000);
+}
+
+function showError(message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'error';
+    errorDiv.textContent = message;
+    document.querySelector('.content-area').insertBefore(errorDiv, document.querySelector('.content-area').firstChild);
+    
+    setTimeout(() => {
+        errorDiv.remove();
+    }, 5000);
+}
+</script>
+{% endblock %}

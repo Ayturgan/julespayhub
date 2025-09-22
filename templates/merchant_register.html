@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light-green">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QRPayHub — Регистрация продавца (MVP)</title>
+    <style>
+        :root { --primary-600:#059669; --bg-primary:#0f172a; --bg-secondary:#1e293b; --bg-tertiary:#334155; --text-primary:#f8fafc; --text-secondary:#cbd5e1; --border:#334155; }
+        html[data-theme="light-green"]{ --primary-600:#059669; --bg-primary:#ffffff; --bg-secondary:#f8fafc; --bg-tertiary:#e2e8f0; --text-primary:#0f172a; --text-secondary:#334155; --border:#cbd5e1; }
+        *{box-sizing:border-box;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Inter,sans-serif}
+        body{margin:0;background:var(--bg-primary);color:var(--text-primary);min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:16px}
+        .wrap{width:100%;max-width:800px}
+        header{display:flex;align-items:center;gap:10px;margin:8px 0 16px}
+        .badge{width:36px;height:36px;border-radius:8px;background:var(--primary-600);display:flex;align-items:center;justify-content:center;font-weight:800;color:#ffffff}
+        .muted{color:var(--text-secondary);font-size:13px}
+        .card{background:var(--bg-secondary);border:1px solid var(--border);border-radius:12px;padding:14px}
+        .grid{display:grid;gap:12px}
+        .grid.cols-2{grid-template-columns:1fr 1fr}
+        label{display:block;margin:8px 0 6px;color:var(--text-secondary);font-size:13px}
+        input,textarea,select{width:100%;padding:10px;border-radius:10px;border:1px solid var(--border);background:var(--bg-tertiary);color:var(--text-primary)}
+        select{appearance:none;background-color:var(--bg-tertiary);background-repeat:no-repeat;background-position:right 10px center;background-size:16px;padding-right:40px}
+        input[readonly]{background:var(--bg-secondary);color:var(--text-secondary);cursor:not-allowed}
+        .msg.err{background:#3f1d1d;color:#fecaca;border:1px solid #7f1d1d;padding:8px;border-radius:6px;font-size:12px}
+        .btn{background:var(--primary-600);color:#fff;border:none;padding:12px;border-radius:10px;cursor:pointer;font-weight:600}
+        .row{display:flex;gap:10px;flex-wrap:wrap}
+        .msg{display:none;margin:10px 0;padding:10px;border-radius:8px;font-size:14px}
+        .err{background:#3f1d1d;color:#fecaca;border:1px solid #7f1d1d}
+        .ok{background:#052e26;color:#bbf7d0;border:1px solid #065f46}
+        a{color:var(--text-secondary);text-decoration:none}
+        a:hover{color:var(--text-primary)}
+        @media(max-width:900px){.grid.cols-2{grid-template-columns:1fr}}
+    </style>
+    </style>
+    <script>
+        (function themeInit(){
+            try{
+                const saved = localStorage.getItem('theme') || 'light';
+                const theme = saved === 'light' ? 'light-green' : 'dark-green';
+                document.documentElement.setAttribute('data-theme', theme);
+            }catch{}
+        })();
+        function toggleTheme(){
+            const current = document.documentElement.getAttribute('data-theme') || 'dark-green';
+            const next = current === 'dark-green' ? 'light-green' : 'dark-green';
+            document.documentElement.setAttribute('data-theme', next);
+            try{ localStorage.setItem('theme', next === 'light-green' ? 'light' : 'dark'); }catch{}
+            const btn = document.getElementById('theme-toggle'); if(btn){ btn.textContent = next === 'light-green' ? '🌙' : '☀️'; }
+        }
+    </script>
+</head>
+<body>
+<div class="wrap">
+    <header style="display:flex; align-items:center; justify-content:space-between;">
+        <div style="display:flex; align-items:center; gap:10px;">
+            <div class="badge">QR</div>
+            <div>
+                <div style="font-weight:700">QRPayHub</div>
+                <div class="muted">Регистрация продавца</div>
+            </div>
+        </div>
+        <button class="btn" id="theme-toggle" type="button" onclick="toggleTheme()" style="width:auto;">☀️</button>
+    </header>
+
+    <div id="err" class="msg err"></div>
+    <div id="ok" class="msg ok"></div>
+
+    <form id="reg-form" class="card">
+        <div class="grid cols-2">
+            <div>
+                <label>Название (отображаемое)</label>
+                <input id="name" required placeholder="ОсОО MegaShop">
+                </div>
+            <div>
+                <label>Юридическое название</label>
+                <input id="legal_name" required placeholder="ОсОО \"Мега Шоп\"">
+                </div>
+            <div>
+                <label>ИНН</label>
+                <input id="inn" required placeholder="14 цифр">
+                </div>
+            <div>
+                <label>КПП (опц.)</label>
+                <input id="kpp" placeholder="9 цифр">
+                </div>
+            <div>
+                <label>Email</label>
+                <input id="email" type="email" required placeholder="you@example.com">
+                </div>
+            <div>
+                <label>Телефон</label>
+                <input id="phone" required placeholder="+996..."></input>
+                </div>
+            <div style="grid-column:1/-1">
+                <label>Адрес</label>
+                <textarea id="address" rows="2" required placeholder="Город, улица, дом"></textarea>
+                </div>
+            <div>
+                <label>Счёт получателя</label>
+                <input id="bank_account" required placeholder="4100...">
+                </div>
+            <div>
+                <label>Банк</label>
+                <select id="bank_select" required>
+                    <option value="">Выберите банк</option>
+                </select>
+                </div>
+            <div>
+                <label>Название банка</label>
+                <input id="bank_name" required placeholder="Название банка" readonly>
+                </div>
+            <div>
+                <label>БИК банка</label>
+                <input id="bank_bik" required placeholder="9 цифр" readonly>
+            </div>
+            <div>
+                <label>Пароль</label>
+                <input id="password" type="password" required placeholder="******">
+            </div>
+            <div>
+                <label>Подтвердить пароль</label>
+                <input id="confirm_password" type="password" required placeholder="******">
+                <div id="password_error" class="msg err" style="margin-top: 5px; font-size: 12px;"></div>
+            </div>
+        </div>
+        <div class="row" style="margin-top:10px">
+            <button type="submit" class="btn">Зарегистрироваться</button>
+            <a href="/merchant-login" style="margin-left:auto">У меня уже есть аккаунт →</a>
+        </div>
+    </form>
+    </div>
+
+    <script>
+    const form = document.getElementById('reg-form');
+    const err = document.getElementById('err');
+    const ok = document.getElementById('ok');
+    
+    // Переменные для работы с банками
+    let banksList = [];
+    const bankSelect = document.getElementById('bank_select');
+    const bankNameInput = document.getElementById('bank_name');
+    const bankBikInput = document.getElementById('bank_bik');
+    
+    // Переменные для работы с паролями
+    const passwordInput = document.getElementById('password');
+    const confirmPasswordInput = document.getElementById('confirm_password');
+    const passwordError = document.getElementById('password_error');
+
+    function show(el, text){ el.textContent = text; el.style.display = 'block'; }
+    function hide(el){ el.style.display = 'none'; }
+    
+    // Загрузка списка банков
+    async function loadBanks() {
+        try {
+            const response = await fetch('/api/v1/merchant/banks');
+            if (!response.ok) {
+                console.error('Ошибка загрузки банков:', response.status);
+                return;
+            }
+            const data = await response.json();
+            banksList = data.banks || [];
+            
+            // Очищаем и заполняем выпадающий список
+            bankSelect.innerHTML = '<option value="">Выберите банк</option>';
+            
+            banksList.forEach(bank => {
+                const option = document.createElement('option');
+                option.value = bank.id;
+                option.textContent = `${bank.name} (${bank.code})`;
+                option.dataset.bankName = bank.name;
+                option.dataset.bankBik = bank.bik || '';
+                bankSelect.appendChild(option);
+            });
+        } catch (error) {
+            console.error('Ошибка при загрузке банков:', error);
+        }
+    }
+    
+    // Обработка выбора банка
+    function handleBankSelection() {
+        const selectedBankId = bankSelect.value;
+        const selectedBank = banksList.find(bank => bank.id == selectedBankId);
+        
+        if (selectedBank) {
+            bankNameInput.value = selectedBank.name;
+            bankBikInput.value = selectedBank.bik || '';
+        } else {
+            bankNameInput.value = '';
+            bankBikInput.value = '';
+        }
+    }
+    
+    // Валидация паролей
+    function validatePasswords() {
+        const password = passwordInput.value;
+        const confirmPassword = confirmPasswordInput.value;
+        
+        // Скрываем ошибку если поля пустые
+        if (!password && !confirmPassword) {
+            hide(passwordError);
+            return true;
+        }
+        
+        // Проверяем минимальную длину
+        if (password.length < 6) {
+            show(passwordError, 'Пароль должен содержать минимум 6 символов');
+            return false;
+        }
+        
+        // Проверяем совпадение паролей
+        if (password !== confirmPassword) {
+            show(passwordError, 'Пароли не совпадают');
+            return false;
+        }
+        
+        // Проверяем сложность пароля
+        const hasLetter = /[a-zA-Zа-яА-Я]/.test(password);
+        const hasDigit = /\d/.test(password);
+        
+        if (!hasLetter || !hasDigit) {
+            show(passwordError, 'Пароль должен содержать буквы и цифры');
+            return false;
+        }
+        
+        // Если все проверки пройдены
+        hide(passwordError);
+        return true;
+    }
+    function getErrorText(payload) {
+        if (!payload) return 'Ошибка регистрации';
+        if (typeof payload === 'string') return payload;
+        
+        // Если это объект, пытаемся извлечь текст ошибки
+        try {
+            if (payload.error) {
+                const error = payload.error;
+                if (typeof error === 'string') return error;
+                
+                // Проверяем наличие детальных ошибок валидации
+                if (error.details && error.details.validation_errors && Array.isArray(error.details.validation_errors)) {
+                    const validationErrors = error.details.validation_errors;
+                    const errorMessages = validationErrors.map(err => {
+                        // Извлекаем название поля из пути
+                        const fieldPath = err.field || '';
+                        const fieldName = fieldPath.includes(' -> ') ? fieldPath.split(' -> ').pop() : fieldPath;
+                        
+                        // Форматируем сообщение об ошибке
+                        let message = err.message || 'Ошибка валидации';
+                        
+                        // Улучшаем сообщения для пользователя
+                        if (message.includes('ИНН должен содержать')) {
+                            message = 'ИНН должен содержать 14 цифр';
+                        } else if (message.includes('КПП должен содержать')) {
+                            message = 'КПП должен содержать 9 цифр';
+                        } else if (message.includes('not a valid email address')) {
+                            message = 'Введите корректный email адрес';
+                        } else if (message.includes('Field required')) {
+                            message = `Поле "${fieldName}" обязательно для заполнения`;
+                        }
+                        
+                        return `${fieldName}: ${message}`;
+                    });
+                    
+                    return errorMessages.join('; ');
+                }
+                
+                // Если нет детальных ошибок, используем user_message
+                return error.user_message || error.message || error.code || 'Ошибка регистрации';
+            }
+            
+            if (payload.detail) {
+                const detail = payload.detail;
+                if (typeof detail === 'string') return detail;
+                if (Array.isArray(detail)) {
+                    // Если detail - это массив ошибок валидации
+                    return detail.map(err => err.msg || err.message || String(err)).join(', ') || 'Ошибка валидации';
+                }
+                if (detail.error) {
+                    const error = detail.error;
+                    if (typeof error === 'string') return error;
+                    return error.user_message || error.message || error.code || 'Ошибка регистрации';
+                }
+                return detail.message || 'Ошибка регистрации';
+            }
+            
+            if (payload.message) {
+                return typeof payload.message === 'string' ? payload.message : 'Ошибка регистрации';
+            }
+            
+            // Если ничего не удалось извлечь, возвращаем дефолтное сообщение
+            return 'Ошибка регистрации';
+        } catch (e) {
+            console.error('Ошибка при обработке ответа:', e);
+            return 'Ошибка регистрации';
+        }
+    }
+
+    // Инициализация при загрузке страницы
+    document.addEventListener('DOMContentLoaded', function() {
+        loadBanks();
+        bankSelect.addEventListener('change', handleBankSelection);
+        
+        // Обработчики для валидации паролей
+        passwordInput.addEventListener('input', validatePasswords);
+        confirmPasswordInput.addEventListener('input', validatePasswords);
+    });
+    
+    form.addEventListener('submit', async (e)=>{
+        e.preventDefault(); hide(err); hide(ok);
+        
+        // Проверяем валидацию паролей перед отправкой
+        if (!validatePasswords()) {
+            return;
+        }
+        
+        const data = {
+            name: document.getElementById('name').value.trim(),
+            legal_name: document.getElementById('legal_name').value.trim(),
+            inn: document.getElementById('inn').value.trim(),
+            kpp: document.getElementById('kpp').value.trim()||null,
+            email: document.getElementById('email').value.trim(),
+            phone: document.getElementById('phone').value.trim(),
+            address: document.getElementById('address').value.trim(),
+            bank_account: document.getElementById('bank_account').value.trim(),
+            bank_name: document.getElementById('bank_name').value.trim(),
+            bank_bik: document.getElementById('bank_bik').value.trim(),
+            password: document.getElementById('password').value
+        };
+        try{
+            const r = await fetch('/api/v1/merchant/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)});
+            let payload = null; try{ payload = await r.json(); }catch{}
+            if(!r.ok){ show(err, getErrorText(payload)); return; }
+            // Успех: показываем краткую инфу и ключ
+            show(ok, 'Регистрация успешна. Ваш API ключ: ' + (payload.api_key || 'выдан').toString());
+            // Предзаполнение логина и переход
+            setTimeout(()=>{ window.location.href = '/merchant-login'; }, 1200);
+        }catch{
+            show(err, 'Ошибка соединения с сервером');
+        }
+        });
+    </script>
+</body>
+</html>
+

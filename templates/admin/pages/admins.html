@@ -1,0 +1,274 @@
+{% extends "admin/layout.html" %}
+
+{% block title %}Администраторы — QRPayHub{% endblock %}
+
+{% block content %}
+<div class="grid cols-2">
+    <div class="card">
+        <h2>Список администраторов</h2>
+        <div id="admins-list" class="muted">Загрузка...</div>
+    </div>
+    <div class="card">
+        <h2>Добавить администратора</h2>
+        <form id="create-admin-form">
+            <label>Имя пользователя</label>
+            <input id="admin-username" required>
+            
+            <label>Полное имя</label>
+            <input id="admin-fullname" required>
+            
+            <label>Email</label>
+            <input type="email" id="admin-email" required>
+            
+            <label>Пароль</label>
+            <input type="password" id="admin-password" required minlength="6">
+            
+            <label>Роль</label>
+            <select id="admin-role">
+                <option value="admin">Администратор</option>
+                <option value="moderator">Модератор</option>
+                <option value="viewer">Наблюдатель</option>
+            </select>
+            
+            <div style="margin-top: 12px;">
+                <button type="submit" class="btn primary">Создать</button>
+                <div id="admin-msg" class="muted"></div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    loadAdmins();
+    
+    document.getElementById('create-admin-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        createAdmin();
+    });
+});
+
+async function loadAdmins() {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/admin-auth/admins'), {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) throw new Error('Ошибка загрузки администраторов');
+        
+        const admins = await response.json();
+        displayAdmins(admins);
+    } catch (error) {
+        console.error('Ошибка загрузки администраторов:', error);
+        document.getElementById('admins-list').innerHTML = '<div class="error">Ошибка загрузки данных</div>';
+    }
+}
+
+function displayAdmins(admins) {
+    const container = document.getElementById('admins-list');
+    
+    if (!admins || admins.length === 0) {
+        container.innerHTML = '<div class="muted">Нет администраторов</div>';
+        return;
+    }
+    
+    const table = `
+        <table>
+            <thead>
+                <tr>
+                    <th>Пользователь</th>
+                    <th>Email</th>
+                    <th>Роль</th>
+                    <th>Статус</th>
+                    <th>Последний вход</th>
+                    <th>Действия</th>
+                </tr>
+            </thead>
+            <tbody>
+                ${admins.map(admin => {
+                    const statusBadge = admin.is_active ? 
+                        '<span class="badge ok">Активен</span>' : 
+                        '<span class="badge err">Заблокирован</span>';
+                    
+                    const lastLogin = admin.last_login ? 
+                        new Date(admin.last_login).toLocaleDateString('ru-RU') : 
+                        'Никогда';
+                    
+                    const roleBadge = getRoleBadge(admin.role);
+                    
+                    return `
+                        <tr>
+                            <td>
+                                <div><strong>${admin.full_name}</strong></div>
+                                <div class="muted" style="font-size: 12px;">@${admin.username}</div>
+                            </td>
+                            <td>${admin.email}</td>
+                            <td>${roleBadge}</td>
+                            <td>${statusBadge}</td>
+                            <td style="font-size: 12px;">${lastLogin}</td>
+                            <td class="table-actions">
+                                <button class="btn" onclick="toggleAdminStatus(${admin.id}, ${admin.is_active})" style="font-size: 11px;">
+                                    ${admin.is_active ? 'Заблокировать' : 'Разблокировать'}
+                                </button>
+                                <button class="btn" onclick="resetAdminPassword(${admin.id})" style="font-size: 11px;">
+                                    Сброс пароля
+                                </button>
+                                ${admin.username !== 'admin' ? `<button class="btn" onclick="deleteAdmin(${admin.id})" style="font-size: 11px; color: var(--err);">Удалить</button>` : ''}
+                            </td>
+                        </tr>
+                    `;
+                }).join('')}
+            </tbody>
+        </table>
+    `;
+    
+    container.innerHTML = table;
+}
+
+function getRoleBadge(role) {
+    const badges = {
+        'admin': '<span class="badge ok">Администратор</span>',
+        'moderator': '<span class="badge warn">Модератор</span>',
+        'viewer': '<span class="badge">Наблюдатель</span>'
+    };
+    return badges[role] || `<span class="badge">${role}</span>`;
+}
+
+async function createAdmin() {
+    const username = document.getElementById('admin-username').value.trim();
+    const fullname = document.getElementById('admin-fullname').value.trim();
+    const email = document.getElementById('admin-email').value.trim();
+    const password = document.getElementById('admin-password').value;
+    const role = document.getElementById('admin-role').value;
+    const msgEl = document.getElementById('admin-msg');
+    
+    if (!username || !fullname || !email || !password) {
+        msgEl.textContent = 'Заполните все обязательные поля';
+        msgEl.style.color = 'var(--err)';
+        return;
+    }
+    
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch('/api/v1/admin-auth/register', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                username: username,
+                full_name: fullname,
+                email: email,
+                password: password,
+                role: role
+            })
+        });
+        
+        if (!response.ok) {
+            const error = await response.json();
+            throw new Error(error.detail || 'Ошибка создания администратора');
+        }
+        
+        const admin = await response.json();
+        
+        msgEl.textContent = 'Администратор успешно создан!';
+        msgEl.style.color = 'var(--primary-600)';
+        
+        // Очищаем форму
+        document.getElementById('create-admin-form').reset();
+        
+        // Перезагружаем список
+        loadAdmins();
+        
+        setTimeout(() => {
+            msgEl.textContent = '';
+        }, 3000);
+        
+    } catch (error) {
+        console.error('Ошибка создания администратора:', error);
+        msgEl.textContent = error.message;
+        msgEl.style.color = 'var(--err)';
+    }
+}
+
+async function toggleAdminStatus(adminId, currentStatus) {
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin-auth/admins/${adminId}`), {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                is_active: !currentStatus
+            })
+        });
+        
+        if (!response.ok) throw new Error('Ошибка изменения статуса администратора');
+        
+        loadAdmins(); // Перезагружаем список
+        
+    } catch (error) {
+        console.error('Ошибка изменения статуса:', error);
+        alert('Ошибка: ' + error.message);
+    }
+}
+
+async function resetAdminPassword(adminId) {
+    const newPassword = prompt('Введите новый пароль (минимум 6 символов):');
+    if (!newPassword || newPassword.length < 6) {
+        alert('Пароль должен содержать минимум 6 символов');
+        return;
+    }
+    
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin-auth/admins/${adminId}`), {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                password: newPassword
+            })
+        });
+        
+        if (!response.ok) throw new Error('Ошибка сброса пароля');
+        
+        alert('Пароль успешно изменен!');
+        
+    } catch (error) {
+        console.error('Ошибка сброса пароля:', error);
+        alert('Ошибка: ' + error.message);
+    }
+}
+
+async function deleteAdmin(adminId) {
+    if (!confirm('Вы уверены, что хотите удалить этого администратора? Это действие нельзя отменить.')) {
+        return;
+    }
+    
+    try {
+        const token = localStorage.getItem('admin_token');
+        const response = await fetch(QRPayHub.utils.getApiUrl(`/api/v1/admin/admins/${adminId}`), {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        
+        if (!response.ok) throw new Error('Ошибка удаления администратора');
+        
+        loadAdmins(); // Перезагружаем список
+        
+    } catch (error) {
+        console.error('Ошибка удаления администратора:', error);
+        alert('Ошибка: ' + error.message);
+    }
+}
+</script>
+{% endblock %}

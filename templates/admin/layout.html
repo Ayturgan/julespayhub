@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light-green">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}QRPayHub — Админ-панель{% endblock %}</title>
+    
+    <!-- CSS файлы -->
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/admin.css">
+    
+    <!-- JavaScript файлы -->
+    <script src="/static/js/shared/utils.js"></script>
+    <script src="/static/js/admin/main.js"></script>
+    
+    <script>
+        // Глобальные переменные для URL - используем как есть, без принудительной замены
+        window.BASE_URL = "{{ BASE_URL }}";
+        window.PAYMENT_URL_TEMPLATE = "{{ PAYMENT_URL_TEMPLATE }}";
+        window.SIMULATION_URL_TEMPLATE = "{{ SIMULATION_URL_TEMPLATE }}";
+        window.BANK_API_URL = "{{ BANK_API_URL }}";
+    </script>
+    
+    <!-- Chart.js для графиков -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation"></script>
+    
+    <script>
+        // Функция переключения темы
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light-green' ? 'dark-green' : 'light-green';
+            
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            
+            const btn = document.getElementById('theme-toggle');
+            if(btn){ 
+                btn.textContent = newTheme === 'light-green' ? '🌙' : '☀️'; 
+            }
+        }
+        
+        // Функция выхода
+        function logout() {
+            localStorage.removeItem('admin_token'); 
+            window.location.href = '/admin/login';
+        }
+        
+        // Инициализация при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            // Восстанавливаем сохраненную тему
+            const savedTheme = localStorage.getItem('theme') || 'light-green';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            
+            const btn = document.getElementById('theme-toggle');
+            if(btn){ 
+                btn.textContent = savedTheme === 'light-green' ? '🌙' : '☀️'; 
+            }
+            
+            // Загружаем информацию об админе
+            loadAdminInfo();
+            
+            // Подсвечиваем активную ссылку
+            highlightActiveNavLink();
+        });
+        
+        function highlightActiveNavLink() {
+            const currentPath = window.location.pathname;
+            const navLinks = document.querySelectorAll('.nav-link');
+            
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === currentPath) {
+                    link.classList.add('active');
+                }
+            });
+        }
+        
+        // Функция loadAdminInfo() теперь в main.js
+    </script>
+    {% block extra_scripts %}{% endblock %}
+</head>
+<body>
+<div class="admin-layout">
+    <!-- Боковая панель -->
+    <div class="sidebar">
+        <!-- Заголовок в сайдбаре -->
+        <div class="sidebar-header">
+            <div class="brand">
+                <div class="brand-badge">QR</div>
+                <div class="brand-text">
+                    <h1>QRPayHub</h1>
+                    <div class="muted">Админ-панель</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Навигация -->
+        <nav class="sidebar-nav">
+            <a href="/admin/dashboard" class="nav-link">📊 Дашборд</a>
+            <a href="/admin/banks" class="nav-link">🏦 Банки</a>
+            <a href="/admin/transactions" class="nav-link">💳 Платежи</a>
+            <a href="/admin/monitoring" class="nav-link">📈 Мониторинг</a>
+            <a href="/admin/qr-codes" class="nav-link">📱 QR коды</a>
+            <a href="/admin/merchants" class="nav-link">👥 Продавцы</a> 
+            <a href="/admin/admins" class="nav-link">👨‍💼 Администраторы</a>
+            <!-- <a href="/admin/settings" class="nav-link">⚙️ Настройки</a>  -->
+            <a href="/admin/profile" class="nav-link">👤 Профиль</a>
+        </nav>
+    </div>
+
+    <!-- Основной контент -->
+    <div class="main-content">
+        <!-- Верхняя панель -->
+        <div class="top-bar">
+            <h1 class="page-title">{% block page_title %}Админ-панель{% endblock %}</h1>
+            <div class="top-bar-actions">
+                <div class="user-info" id="current-admin-name">Загрузка...</div>
+                <button class="btn" id="theme-toggle" title="Переключить тему" onclick="toggleTheme()">☀️</button>
+                <button class="btn" onclick="logout()">Выйти</button>
+            </div>
+        </div>
+
+        <!-- Контент страницы -->
+        <div class="content-area">
+            {% block content %}
+            <div class="loading">Загрузка...</div>
+            {% endblock %}
+        </div>
+    </div>
+</div>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

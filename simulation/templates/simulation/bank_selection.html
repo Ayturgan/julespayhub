@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Выбор банка - QRPayHub</title>
+    
+    <script>
+        // Глобальные переменные для URL
+        window.BASE_URL = "{{ BASE_URL }}";
+        window.PAYMENT_URL_TEMPLATE = "{{ PAYMENT_URL_TEMPLATE }}";
+        window.SIMULATION_URL_TEMPLATE = "{{ SIMULATION_URL_TEMPLATE }}";
+        window.BANK_API_URL = "{{ BANK_API_URL }}";
+    </script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .bg-gradient-bank {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .bank-card {
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .bank-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 40px rgba(0,0,0,0.15);
+        }
+        .bank-card.selected {
+            border: 3px solid #667eea;
+            background: linear-gradient(135deg, #f8f9ff 0%, #e8f0ff 100%);
+        }
+        .bank-logo {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 24px;
+            margin: 0 auto 15px;
+        }
+        .continue-button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.2em;
+            border-radius: 10px;
+            transition: all 0.3s;
+        }
+        .continue-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+        }
+        .continue-button:disabled {
+            background: #6c757d;
+            transform: none;
+            box-shadow: none;
+        }
+    </style>
+</head>
+<body class="bg-light" data-token="{{ token }}">
+    
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-gradient-bank">
+        <div class="container">
+            <a class="navbar-brand" href="/simulation">
+                <i class="fas fa-university me-2"></i>
+                QRPayHub - Выбор банка
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/simulation">
+                    <i class="fas fa-arrow-left me-1"></i>
+                    Назад к симулятору
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header bg-gradient-bank text-white">
+                        <h4 class="mb-0">
+                            <i class="fas fa-credit-card me-2"></i>
+                            Выберите ваш банк для оплаты
+                        </h4>
+                    </div>
+                    <div class="card-body">
+                        <p class="text-muted mb-4">
+                            Выберите банк, с которого будет производиться оплата. 
+                            Это определит, какой банк будет отображаться в симуляции.
+                        </p>
+                        
+                        <!-- Bank Selection -->
+                        <div class="row" id="banksContainer">
+                            <!-- Банки будут загружены динамически -->
+                        </div>
+                        
+                        <!-- Continue Button -->
+                        <div class="text-center mt-4">
+                            <button id="continueButton" class="btn btn-primary continue-button" disabled onclick="continueToPayment()">
+                                <i class="fas fa-arrow-right me-2"></i>
+                                Продолжить к оплате
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        let selectedBank = null;
+        const token = document.body.getAttribute('data-token');
+
+        // Загружаем список банков
+        async function loadBanks() {
+            try {
+                const response = await fetch('/simulation/api/banks/');
+                if (response.ok) {
+                    const banks = await response.json();
+                    displayBanks(banks);
+                } else {
+                    console.error('Ошибка загрузки банков');
+                    displayError('Не удалось загрузить список банков');
+                }
+            } catch (error) {
+                console.error('Ошибка:', error);
+                displayError('Ошибка сети при загрузке банков');
+            }
+        }
+
+        // Отображаем банки
+        function displayBanks(banks) {
+            const container = document.getElementById('banksContainer');
+            
+            console.log('Загружено банков:', banks.length);
+            console.log('Банки:', banks);
+            
+            if (banks.length === 0) {
+                container.innerHTML = `
+                    <div class="col-12 text-center">
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            Нет доступных банков
+                        </div>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = banks.map(bank => `
+                <div class="col-md-6 col-lg-4 mb-3">
+                    <div class="card bank-card" data-bank-code="${bank.code}" data-bank-name="${bank.name}">
+                        <div class="card-body text-center">
+                            <div class="bank-logo">
+                                <i class="fas fa-university"></i>
+                            </div>
+                            <h5 class="card-title">${bank.name}</h5>
+                            <p class="card-text text-muted">
+                                <small>Код: ${bank.code}</small>
+                            </p>
+                            ${bank.bik ? `<p class="card-text text-muted"><small>БИК: ${bank.bik}</small></p>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Выбор банка
+        function selectBank(bankCode, bankName) {
+            console.log('Выбран банк:', bankCode, bankName);
+            
+            // Убираем выделение со всех карточек
+            document.querySelectorAll('.bank-card').forEach(card => {
+                card.classList.remove('selected');
+            });
+            
+            // Выделяем выбранную карточку
+            const selectedCard = document.querySelector(`[data-bank-code="${bankCode}"]`);
+            if (selectedCard) {
+                selectedCard.classList.add('selected');
+                console.log('Карточка выделена:', selectedCard);
+            } else {
+                console.error('Карточка не найдена для банка:', bankCode);
+            }
+            
+            selectedBank = { code: bankCode, name: bankName };
+            console.log('Выбранный банк сохранен:', selectedBank);
+            
+            // Активируем кнопку продолжения
+            const continueButton = document.getElementById('continueButton');
+            continueButton.disabled = false;
+            continueButton.innerHTML = `
+                <i class="fas fa-arrow-right me-2"></i>
+                Продолжить с ${bankName}
+            `;
+            console.log('Кнопка активирована');
+        }
+
+        // Переход к оплате
+        function continueToPayment() {
+            if (!selectedBank) {
+                alert('Пожалуйста, выберите банк');
+                return;
+            }
+            
+            // Сохраняем выбранный банк в sessionStorage
+            sessionStorage.setItem('selectedBank', JSON.stringify(selectedBank));
+            
+            // Переходим к странице оплаты
+            window.location.href = `/simulation/payment?token=${token}&bank=${selectedBank.code}`;
+        }
+
+        // Отображение ошибки
+        function displayError(message) {
+            const container = document.getElementById('banksContainer');
+            container.innerHTML = `
+                <div class="col-12 text-center">
+                    <div class="alert alert-danger">
+                        <i class="fas fa-exclamation-circle me-2"></i>
+                        ${message}
+                    </div>
+                </div>
+            `;
+        }
+
+        // Обработчик кликов по карточкам банков
+        document.addEventListener('click', function(event) {
+            const bankCard = event.target.closest('.bank-card');
+            if (bankCard) {
+                const bankCode = bankCard.getAttribute('data-bank-code');
+                const bankName = bankCard.getAttribute('data-bank-name');
+                selectBank(bankCode, bankName);
+            }
+        });
+
+        // Загружаем банки при загрузке страницы
+        document.addEventListener('DOMContentLoaded', loadBanks);
+    </script>
+</body>
+</html>

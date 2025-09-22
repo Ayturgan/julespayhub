@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }}</title>
+    
+    <script>
+        // Глобальные переменные для URL
+        window.BASE_URL = "{{ BASE_URL }}";
+        window.PAYMENT_URL_TEMPLATE = "{{ PAYMENT_URL_TEMPLATE }}";
+        window.SIMULATION_URL_TEMPLATE = "{{ SIMULATION_URL_TEMPLATE }}";
+        window.BANK_API_URL = "{{ BANK_API_URL }}";
+    </script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .bg-gradient-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card-stats {
+            border-left: 4px solid #667eea;
+        }
+        .simulation-card {
+            transition: transform 0.2s;
+            cursor: pointer;
+        }
+        .simulation-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-gradient-primary">
+        <div class="container">
+            <a class="navbar-brand" href="/simulation">
+                <i class="fas fa-university me-2"></i>
+                Симулятор Банков QRPayHub
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/admin">
+                    <i class="fas fa-cog me-1"></i>
+                    Админ панель
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h1 class="h3 mb-3">
+                    <i class="fas fa-rocket text-primary"></i>
+                    Добро пожаловать в симулятор банков
+                </h1>
+                <p class="text-muted">
+                    Демонстрация двухфазных транзакций QRPayHub в режиме реального времени
+                </p>
+            </div>
+        </div>
+
+        <!-- Statistics -->
+        <div class="row mb-5">
+            <div class="col-md-4">
+                <div class="card card-stats h-100">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col">
+                                <h5 class="card-title text-uppercase text-muted mb-0">Всего платежей</h5>
+                                <span class="h2 font-weight-bold mb-0">{{ total_payments }}</span>
+                            </div>
+                            <div class="col-auto">
+                                <div class="icon icon-shape bg-info text-white rounded-circle shadow">
+                                    <i class="fas fa-credit-card"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card card-stats h-100">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col">
+                                <h5 class="card-title text-uppercase text-muted mb-0">Активные транзакции</h5>
+                                <span class="h2 font-weight-bold mb-0">{{ active_transactions }}</span>
+                            </div>
+                            <div class="col-auto">
+                                <div class="icon icon-shape bg-warning text-white rounded-circle shadow">
+                                    <i class="fas fa-sync fa-spin"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card card-stats h-100">
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col">
+                                <h5 class="card-title text-uppercase text-muted mb-0">Подключенных банков</h5>
+                                <span class="h2 font-weight-bold mb-0">{{ banks|length }}</span>
+                            </div>
+                            <div class="col-auto">
+                                <div class="icon icon-shape bg-success text-white rounded-circle shadow">
+                                    <i class="fas fa-university"></i>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Simulation Tools -->
+        <div class="row mb-5">
+            <div class="col-12">
+                <h2 class="h4 mb-3">Инструменты симуляции</h2>
+            </div>
+            
+            <!-- Bank Sender Simulator -->
+            <div class="col-md-6 mb-4">
+                <div class="card simulation-card h-100" onclick="showQRScanHelp()">
+                    <div class="card-body text-center">
+                        <div class="mb-3">
+                            <i class="fas fa-mobile-alt fa-3x text-primary"></i>
+                        </div>
+                        <h5 class="card-title">Банк Отправителя</h5>
+                        <p class="card-text text-muted">
+                            Нажмите "💳 Оплатить" в QR-кодах для запуска симуляции 
+                            с выбором банка и интерактивным логом двухфазной транзакции
+                        </p>
+                        <div class="mt-3">
+                            <span class="badge bg-primary me-2">QR Scanner</span>
+                            <span class="badge bg-info me-2">Live Logs</span>
+                            <span class="badge bg-success">Real-time</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bank Receiver Simulator -->
+            <div class="col-md-6 mb-4">
+                <div class="card simulation-card h-100" onclick="showReceiverBankHelp()">
+                    <div class="card-body text-center">
+                        <div class="mb-3">
+                            <i class="fas fa-chart-line fa-3x text-success"></i>
+                        </div>
+                        <h5 class="card-title">Банк Получателя</h5>
+                        <p class="card-text text-muted">
+                            Мониторинг счета продавца и автоматическое обновление 
+                            баланса при поступлении платежей
+                        </p>
+                        <div class="mt-3">
+                            <span class="badge bg-success me-2">Balance Monitor</span>
+                            <span class="badge bg-info me-2">Auto Update</span>
+                            <span class="badge bg-warning">Live Dashboard</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Banks Configuration -->
+        <div class="row mb-5">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-cog me-2"></i>
+                            Конфигурация Mock API банков
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row align-items-center">
+                            <div class="col-md-8">
+                                <p class="mb-0">
+                                    Настройте банки для использования симуляторов вместо реальных API
+                                </p>
+                                <small class="text-muted">
+                                    Это изменит webhook_url банков на эндпоинты симулятора
+                                </small>
+                            </div>
+                            <div class="col-md-4 text-end">
+                                <button class="btn btn-outline-primary me-2" onclick="configureMockBanks(true)">
+                                    <i class="fas fa-play me-1"></i>
+                                    Включить симуляцию
+                                </button>
+                                <button class="btn btn-outline-secondary" onclick="configureMockBanks(false)">
+                                    <i class="fas fa-stop me-1"></i>
+                                    Отключить
+                                </button>
+                            </div>
+                        </div>
+                        <div id="configResult" class="mt-3" style="display: none;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Banks List -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-university me-2"></i>
+                            Зарегистрированные банки
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        {% if banks %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Код</th>
+                                        <th>Название</th>
+                                        <th>БИК</th>
+                                        <th>Статус</th>
+                                        <th>Webhook URL</th>
+                                        <th>Действия</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for bank in banks %}
+                                    <tr>
+                                        <td><code>{{ bank.code }}</code></td>
+                                        <td>{{ bank.name }}</td>
+                                        <td>{{ bank.bik or "—" }}</td>
+                                        <td>
+                                            {% if bank.is_active %}
+                                                <span class="badge bg-success">Активен</span>
+                                            {% else %}
+                                                <span class="badge bg-secondary">Неактивен</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <small class="text-muted">
+                                                {{ bank.webhook_url[:30] }}...
+                                            </small>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-info" 
+                                                    onclick="openReceiverBankByBank('{{ bank.code }}')">
+                                                <i class="fas fa-chart-line me-1"></i>
+                                                Счет
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-exclamation-triangle fa-2x text-warning mb-3"></i>
+                            <p>Банки не найдены. Выполните инициализацию базы данных.</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Merchants List -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-store me-2"></i>
+                            Продавцы для симуляции
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        {% if merchants %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>ID</th>
+                                        <th>Название</th>
+                                        <th>Email</th>
+                                        <th>Банк</th>
+                                        <th>Статус</th>
+                                        <th>Действия</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for merchant in merchants %}
+                                    <tr>
+                                        <td><code>{{ merchant.id }}</code></td>
+                                        <td>{{ merchant.name }}</td>
+                                        <td>{{ merchant.email }}</td>
+                                        <td>{{ merchant.bank_name }}</td>
+                                        <td>
+                                            {% if merchant.is_verified %}
+                                                <span class="badge bg-success">Верифицирован</span>
+                                            {% else %}
+                                                <span class="badge bg-warning">Не верифицирован</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary" 
+                                                    onclick="openReceiverBank('{{ merchant.id }}')">
+                                                <i class="fas fa-chart-line me-1"></i>
+                                                Счет
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="text-center py-4">
+                            <i class="fas fa-exclamation-triangle fa-2x text-warning mb-3"></i>
+                            <p>Продавцы не найдены. Выполните инициализацию базы данных.</p>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Функции для управления симулятором
+        
+        function showQRScanHelp() {
+            alert(`Для запуска симулятора банка-отправителя:
+
+1. Перейдите в админ панель (/admin) или кабинет продавца
+2. Найдите нужный QR-код
+3. Нажмите кнопку "💳 Оплатить"
+4. Откроется симулятор с выбором банка
+
+Или используйте кнопку "📋 Копировать ссылку" для получения прямой ссылки на симулятор.`);
+        }
+        
+        function showReceiverBankHelp() {
+            alert(`Для использования симулятора банка-получателя:
+
+1. Нажмите кнопку "Счет" у любого банка в таблице
+2. Откроется интерфейс мониторинга счета
+3. В другой вкладке запустите платеж через симулятор отправителя
+4. Наблюдайте как обновляется баланс в реальном времени
+
+Интерфейс автоматически обновляется каждые 2 секунды.`);
+        }
+        
+        function openReceiverBank(merchantId) {
+            // Открываем страницу банка получателя для конкретного продавца
+            const url = `/simulation/receiver-account/${merchantId}`;
+            window.open(url, '_blank');
+        }
+        
+        function openReceiverBankByBank(bankCode) {
+            // Открываем страницу банка получателя с указанием банка
+            const url = `/simulation/receiver-account/1?bank=${bankCode}`;
+            window.open(url, '_blank');
+        }
+        
+        async function configureMockBanks(enable) {
+            const resultDiv = document.getElementById('configResult');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<div class="spinner-border spinner-border-sm me-2"></div>Настройка банков...';
+            
+            try {
+                const response = await fetch(`/simulation/api/configure-mock-banks?enable_simulation=${enable}`, {
+                    method: 'POST'
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <div class="alert alert-success">
+                            <i class="fas fa-check me-2"></i>
+                            ${result.message}. Затронуто банков: ${result.affected_banks}
+                        </div>
+                    `;
+                    
+                    // Обновляем страницу через 2 секунды
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    throw new Error(result.detail || 'Неизвестная ошибка');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="fas fa-times me-2"></i>
+                        Ошибка: ${error.message}
+                    </div>
+                `;
+            }
+        }
+        
+        // Обновление статистики каждые 10 секунд
+        setInterval(() => {
+            location.reload();
+        }, 10000);
+    </script>
+</body>
+</html>

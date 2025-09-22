@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light-green">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}QRPayHub — Кабинет продавца{% endblock %}</title>
+    
+    <!-- CSS файлы -->
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/merchant.css">
+    
+    <!-- JavaScript файлы -->
+    <script src="/static/js/shared/utils.js"></script>
+    
+    <script>
+        // Глобальные переменные для URL - используем как есть, без принудительной замены
+        window.BASE_URL = "{{ BASE_URL }}";
+        window.PAYMENT_URL_TEMPLATE = "{{ PAYMENT_URL_TEMPLATE }}";
+        window.SIMULATION_URL_TEMPLATE = "{{ SIMULATION_URL_TEMPLATE }}";
+        window.BANK_API_URL = "{{ BANK_API_URL }}";
+    </script>
+    
+    <script>
+        // Функция переключения темы
+        function toggleTheme() {
+            const html = document.documentElement;
+            const currentTheme = html.getAttribute('data-theme');
+            const newTheme = currentTheme === 'light-green' ? 'dark-green' : 'light-green';
+            
+            html.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            
+            const btn = document.getElementById('theme-toggle');
+            if(btn){ 
+                btn.textContent = newTheme === 'light-green' ? '🌙' : '☀️'; 
+            }
+        }
+        
+        // Функция выхода
+        function logout() {
+            localStorage.removeItem('merchant_token');
+            window.location.href = '/merchant-login';
+        }
+        
+        // Инициализация при загрузке страницы
+        document.addEventListener('DOMContentLoaded', function() {
+            // Восстанавливаем сохраненную тему
+            const savedTheme = localStorage.getItem('theme') || 'light-green';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            
+            const btn = document.getElementById('theme-toggle');
+            if(btn){ 
+                btn.textContent = savedTheme === 'light-green' ? '🌙' : '☀️'; 
+            }
+            
+            // Загружаем информацию о продавце
+            loadMerchantInfo();
+            
+            // Подсвечиваем активную ссылку в навигации
+            highlightActiveNavLink();
+        });
+        
+        // Подсветка активной ссылки в навигации
+        function highlightActiveNavLink() {
+            const currentPath = window.location.pathname;
+            const navLinks = document.querySelectorAll('.nav-link');
+            
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                if (link.getAttribute('href') === currentPath) {
+                    link.classList.add('active');
+                }
+            });
+        }
+        
+        async function loadMerchantInfo() {
+            try {
+                console.log('Layout: Начинаем загрузку информации о продавце...');
+                const token = localStorage.getItem('merchant_token');
+                console.log('Layout: Токен получен:', token ? 'да' : 'нет');
+                
+                const response = await fetch(QRPayHub.utils.getApiUrl('/api/v1/merchant/profile'), {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                console.log('Layout: Ответ получен, статус:', response.status);
+                
+                if (response.ok) {
+                    const merchant = await response.json();
+                    console.log('Layout: Данные продавца:', merchant);
+                    
+                    const name = merchant.name || 'Продавец';
+                    const verificationStatus = merchant.is_verified ? '✓ Верифицирован' : '⚠ Не верифицирован';
+                    const statusColor = merchant.is_verified ? 'var(--primary-600)' : '#f59e0b';
+                    
+                    const element = document.getElementById('current-merchant-name');
+                    console.log('Layout: Элемент найден:', element ? 'да' : 'нет');
+                    
+                    if (element) {
+                        element.innerHTML = `${name} <span style="color: ${statusColor}; font-size: 12px; margin-left: 8px;">${verificationStatus}</span>`;
+                        console.log('Layout: Элемент обновлен');
+                    } else {
+                        console.error('Layout: Элемент current-merchant-name не найден');
+                    }
+                } else {
+                    console.error('Layout: Ошибка API:', response.status);
+                }
+            } catch (error) {
+                console.error('Layout: Ошибка загрузки профиля продавца:', error);
+                const element = document.getElementById('current-merchant-name');
+                if (element) {
+                    element.textContent = 'Продавец';
+                }
+            }
+        }
+    </script>
+    {% block extra_scripts %}{% endblock %}
+</head>
+<body>
+<div class="merchant-layout">
+        <!-- Боковая панель -->
+    <div class="sidebar">
+        <!-- Заголовок в сайдбаре -->
+            <div class="sidebar-header">
+                <div class="brand">
+                <div class="brand-badge">QR</div>
+                <div class="brand-text">
+                        <h1>QRPayHub</h1>
+                        <div class="muted">Кабинет продавца</div>
+                    </div>
+                </div>
+            </div>
+            
+        <!-- Навигация -->
+            <nav class="sidebar-nav">
+            <a href="/merchant/dashboard" class="nav-link">📊 Дашборд</a>
+            <a href="/merchant/qr-codes" class="nav-link">📱 QR-коды</a>
+            <a href="/merchant/payments" class="nav-link">💳 Платежи</a>
+            <a href="/merchant/refunds" class="nav-link">💰 Возвраты</a>
+            <a href="/merchant/outlets" class="nav-link">🏪 Точки продаж</a>
+            <a href="/merchant/statistics" class="nav-link">📈 Статистика</a>
+            <a href="/merchant/settings" class="nav-link">⚙️ Настройки</a>
+            </nav>
+    </div>
+        
+        <!-- Основной контент -->
+    <div class="main-content">
+        <!-- Верхняя панель -->
+            <div class="top-bar">
+            <h1 class="page-title">{% block page_title %}Кабинет продавца{% endblock %}</h1>
+            <div class="top-bar-actions">
+                <div class="user-info" id="current-merchant-name">Загрузка...</div>
+                <button class="btn" id="theme-toggle" title="Переключить тему" onclick="toggleTheme()">☀️</button>
+                <button class="btn" onclick="logout()">Выйти</button>
+            </div>
+            </div>
+            
+        <!-- Контент страницы -->
+            <div class="content-area">
+            {% block content %}
+            <div class="loading">Загрузка...</div>
+            {% endblock %}
+            </div>
+    </div>
+</div>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>
