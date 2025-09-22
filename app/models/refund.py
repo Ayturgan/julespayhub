@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, 
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from app.database import Base
+from app.models.unified import UnifiedPayment
 import enum
 
 class RefundStatus(enum.Enum):
@@ -28,7 +29,7 @@ class RefundRequest(Base):
     id = Column(Integer, primary_key=True, index=True)
     
     # Связи с существующими таблицами
-    original_payment_id = Column(Integer, ForeignKey("merchant_payments.id"), nullable=False, index=True)
+    original_payment_id = Column(Integer, ForeignKey("unified_payments.id"), nullable=False, index=True)
     merchant_id = Column(Integer, ForeignKey("merchants.id"), nullable=False, index=True)
     
     # Основная информация о возврате
@@ -67,7 +68,7 @@ class RefundRequest(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Связи
-    original_payment = relationship("MerchantPayment", backref="refunds")
+    original_payment = relationship("UnifiedPayment", backref="refunds")
     merchant = relationship("Merchant", backref="refunds")
     
     __table_args__ = (

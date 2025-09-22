@@ -14,11 +14,12 @@ sys.path.insert(0, os.path.abspath('.'))
 
 from app.database import engine, Base
 from app.models.payment import (
-    Bank, PaymentRequest, PaymentLog, TransactionStatus, TwoPhaseOperation,
+    Bank, PaymentLog, TransactionStatus, TwoPhaseOperation,
     TransactionRecord, BillingRecord, RateLimitRecord
 )
-from app.models.merchant import Merchant, QRCode, MerchantPayment, MerchantSettings, TradingPoint
+from app.models.merchant import Merchant, MerchantSettings, TradingPoint
 from app.models.admin import Admin
+from app.models.unified import UnifiedPayment, UnifiedQRCode
 from app.models.audit import AuditLog
 from app.models.timeline import TimelineEvent
 from app.models.settings import SystemSetting
@@ -390,350 +391,119 @@ def create_test_merchants(session):
     return created_merchants
 
 def create_test_payments(session):
-    """Создание тестовых платежей с разными статусами двухфазных транзакций"""
-    print("💳 Создание тестовых платежей...")
-    
-    # Получаем банки и продавцов
+    """Создание тестовых платежей с разными статусами для UnifiedPayment"""
+    print("💳 Создание тестовых унифицированных платежей...")
+
     banks = session.query(Bank).all()
     merchants = session.query(Merchant).all()
-    
+    admins = session.query(Admin).all()
+    qr_codes = session.query(UnifiedQRCode).all()
+
     now = datetime.now(timezone.utc)
-    
-    # Создаем больше платежей для тестирования графиков
     test_payments = []
-    
-    # Базовые платежи для демонстрации разных статусов
-    base_payments = [
-        # Обычный ожидающий платеж
-        {
-            "token": secrets.token_urlsafe(32),
-            "payment_reference": "PAY240101001",
-            "receiver_account": "1234567890123456",
-            "receiver_bank_code": banks[0].code if banks else "CBKG",
-            "receiver_name": "ИП Иванов И.И.",
-            "description": "Оплата товаров",
-            "amount": 2500.0,
-            "currency": "KGS",
-            "status": TransactionStatus.PENDING,
-            "expires_at": now + timedelta(days=1),
-            "merchant_id": merchants[0].id if merchants else None
-        },
-        # Завершенная двухфазная транзакция
-        {
-            "token": secrets.token_urlsafe(32),
-            "payment_reference": "PAY240101002",
-            "receiver_account": "9876543210987654",
-            "receiver_bank_code": banks[1].code if len(banks) > 1 else "OPTIMA",
-            "receiver_name": "ООО Тест Компани",
-            "description": "Оплата услуг",
-            "amount": 5000.0,
-            "currency": "KGS",
-            "status": TransactionStatus.COMPLETED,
-            "sender_bank_code": banks[2].code if len(banks) > 2 else "KYRGYZ",
-            "transaction_id": "2PC_" + secrets.token_urlsafe(16),
-            "payer_phone": "+996700123456",
-            "paid_amount": 5000.0,
-            "is_paid": True,
-            "paid_at": now - timedelta(hours=2),
-            "prepare_started_at": now - timedelta(hours=2, minutes=5),
-            "prepare_completed_at": now - timedelta(hours=2, minutes=4),
-            "commit_started_at": now - timedelta(hours=2, minutes=3),
-            "commit_completed_at": now - timedelta(hours=2),
-            "expires_at": now + timedelta(days=1),
-            "merchant_id": merchants[1].id if len(merchants) > 1 else None,
-            "sender_prepare_result": '{"status": "prepared", "reserved_amount": 5000.0, "reservation_id": "RES123"}',
-            "receiver_prepare_result": '{"status": "prepared", "message": "Ready to receive"}',
-            "two_phase_metadata": '{"timeout_seconds": 300, "started_at": "' + (now - timedelta(hours=2, minutes=5)).isoformat() + '"}'
-        },
-        # Отмененная транзакция
-        {
-            "token": secrets.token_urlsafe(32),
-            "payment_reference": "PAY240101003",
-            "receiver_account": "5555666677778888",
-            "receiver_bank_code": banks[0].code if banks else "CBKG",
-            "receiver_name": "ИП Петров П.П.",
-            "description": "Отмененный платеж",
-            "amount": 1500.0,
-            "currency": "KGS",
-            "status": TransactionStatus.ABORTED,
-            "sender_bank_code": banks[1].code if len(banks) > 1 else "OPTIMA",
-            "transaction_id": "2PC_" + secrets.token_urlsafe(16),
-            "payer_phone": "+996700654321",
-            "prepare_started_at": now - timedelta(hours=1, minutes=10),
-            "prepare_completed_at": now - timedelta(hours=1, minutes=9),
-            "abort_started_at": now - timedelta(hours=1, minutes=8),
-            "abort_completed_at": now - timedelta(hours=1, minutes=7),
-            "expires_at": now + timedelta(days=1),
-            "sender_prepare_result": '{"status": "prepared", "reserved_amount": 1500.0, "reservation_id": "RES456"}',
-            "receiver_prepare_result": '{"status": "aborted", "error_code": "ACCOUNT_BLOCKED", "error_details": {"reason": "Account temporarily blocked"}}',
-            "two_phase_metadata": '{"abort_reason": "Receiver bank rejected transaction", "timeout_seconds": 300}'
-        },
-        # Транзакция в процессе подготовки
-        {
-            "token": secrets.token_urlsafe(32),
-            "payment_reference": "PAY240101004",
-            "receiver_account": "1111222233334444",
-            "receiver_bank_code": banks[2].code if len(banks) > 2 else "KYRGYZ",
-            "receiver_name": "ООО \"Быстрые Покупки\"",
-            "description": "Платеж в процессе обработки",
-            "amount": 3750.0,
-            "currency": "KGS",
-            "status": TransactionStatus.PREPARING,
-            "sender_bank_code": banks[0].code if banks else "CBKG",
-            "transaction_id": "2PC_" + secrets.token_urlsafe(16),
-            "payer_phone": "+996700987654",
-            "prepare_started_at": now - timedelta(minutes=2),
-            "expires_at": now + timedelta(days=1),
-            "two_phase_metadata": '{"timeout_seconds": 300, "started_at": "' + (now - timedelta(minutes=2)).isoformat() + '"}'
-        }
-    ]
-    
-    test_payments.extend(base_payments)
-    
-    # Создаем дополнительные завершенные платежи для тестирования графиков
-    print("  📊 Создание дополнительных завершенных платежей для графиков...")
-    
-    for i in range(50):  # 50 дополнительных завершенных платежей
-        # Распределяем по времени за последние 24 часа
-        hours_ago = i % 24
-        minutes_ago = (i * 7) % 60  # Разные минуты для разнообразия
-        
-        payment_time = now - timedelta(hours=hours_ago, minutes=minutes_ago)
-        
-        # Выбираем случайные банки и продавцов
-        bank = banks[i % len(banks)] if banks else None
-        merchant = merchants[i % len(merchants)] if merchants else None
-        
-        # Разные суммы для разнообразия
-        amount = round(100.0 + (i * 50) + (i % 10) * 25, 2)
-        
-        payment_data = {
-            "token": secrets.token_urlsafe(32),
-            "payment_reference": f"PAY240101{100 + i:03d}",
-            "receiver_account": f"{1000000000000000 + i}",
-            "receiver_bank_code": bank.code if bank else "DEMO",
-            "receiver_name": f"Получатель {i + 1}",
-            "description": f"Платеж #{i + 1}",
-            "amount": amount,
-            "currency": "KGS",
-            "status": TransactionStatus.COMPLETED,
-            "sender_bank_code": banks[(i + 1) % len(banks)].code if len(banks) > 1 else "DEMO",
-            "transaction_id": f"2PC_{secrets.token_urlsafe(16)}",
-            "payer_phone": f"+996700{100000 + i}",
-            "paid_amount": amount,
-            "is_paid": True,
-            "paid_at": payment_time,
-            "prepare_started_at": payment_time - timedelta(minutes=2),
-            "prepare_completed_at": payment_time - timedelta(minutes=1, seconds=30),
-            "commit_started_at": payment_time - timedelta(minutes=1),
-            "commit_completed_at": payment_time,
-            "expires_at": payment_time + timedelta(days=1),
-            "merchant_id": merchant.id if merchant else None,
-            "sender_prepare_result": f'{{"status": "prepared", "reserved_amount": {amount}, "reservation_id": "RES{i:03d}"}}',
-            "receiver_prepare_result": '{"status": "prepared", "message": "Ready to receive"}',
-            "two_phase_metadata": f'{{"timeout_seconds": 300, "started_at": "{(payment_time - timedelta(minutes=2)).isoformat()}"}}'
-        }
-        
-        test_payments.append(payment_data)
-    
-    print(f"  ✅ Создано {len(test_payments)} платежей (включая {len(base_payments)} базовых и {len(test_payments) - len(base_payments)} дополнительных)")
-    
-    created_payments = []
+
+    # Платеж от продавца (успешный)
+    if merchants and banks and qr_codes:
+        merchant = merchants[0]
+        test_payments.append(
+            UnifiedPayment(
+                merchant_id=merchant.id,
+                qr_code_id=qr_codes[0].id,
+                amount=1500.0,
+                currency="KGS",
+                description="Оплата за товары от " + merchant.name,
+                status=TransactionStatus.COMPLETED,
+                receiver_name=merchant.name,
+                receiver_account=merchant.bank_account,
+                receiver_bank_code=merchant.bank_bik,
+                payer_phone="+996700111222",
+                payer_bank_code=banks[1].code,
+                sender_account="9876543210123456",
+                transaction_id="UP_M_" + secrets.token_hex(8),
+                payment_reference="UP_REF_M_" + secrets.token_hex(8),
+                is_paid=True,
+                paid_at=now - timedelta(days=1),
+                commit_completed_at=now - timedelta(days=1),
+            )
+        )
+
+    # Платеж от админа (в ожидании)
+    if admins and banks and qr_codes:
+        admin = admins[0]
+        test_payments.append(
+            UnifiedPayment(
+                admin_id=admin.id,
+                qr_code_id=qr_codes[1].id if len(qr_codes) > 1 else None,
+                amount=5000.0,
+                currency="USD",
+                description="Административный сбор",
+                status=TransactionStatus.PENDING,
+                receiver_name=admin.organization_name or admin.full_name,
+                receiver_account=admin.bank_account,
+                receiver_bank_code=admin.bank_code,
+                payment_reference="UP_REF_A_" + secrets.token_hex(8),
+                expires_at=now + timedelta(days=5),
+            )
+        )
+
     for payment_data in test_payments:
-        payment = PaymentRequest(**payment_data)
-        session.add(payment)
-        created_payments.append(payment)
-        print(f"  ✅ Платеж {payment.payment_reference} - {payment.amount} {payment.currency} ({payment.status.value})")
-    
-    session.commit()
-    print("💳 Платежи созданы успешно!")
-    
-    # Создаем 10 специальных платежей для админа (admin@gmail.com)
-    print("  👤 Создание 10 платежей для админа...")
-    admin_merchant = session.query(Merchant).filter(Merchant.email == "admin@gmail.com").first()
-    
-    if admin_merchant:
-        admin_payments = []
-        for i in range(10):
-            # Разные суммы для разнообразия
-            amount = round(500.0 + (i * 200) + (i % 5) * 100, 2)
-            payment_time = now - timedelta(hours=i * 2, minutes=i * 15)
-            
-            payment_data = {
-                "token": secrets.token_urlsafe(32),
-                "payment_reference": f"ADMIN{i+1:03d}",
-                "receiver_account": admin_merchant.bank_account,
-                "receiver_bank_code": "DEMO",  # Используем демо банк
-                "receiver_name": admin_merchant.name,
-                "description": f"Платеж админа #{i + 1}",
-                "amount": amount,
-                "currency": "KGS",
-                "status": TransactionStatus.COMPLETED,
-                "sender_bank_code": "CBKG",
-                "transaction_id": f"2PC_ADMIN_{secrets.token_urlsafe(16)}",
-                "payer_phone": f"+996700{100000 + i}",
-                "paid_amount": amount,
-                "is_paid": True,
-                "paid_at": payment_time,
-                "prepare_started_at": payment_time - timedelta(minutes=2),
-                "prepare_completed_at": payment_time - timedelta(minutes=1, seconds=30),
-                "commit_started_at": payment_time - timedelta(minutes=1),
-                "commit_completed_at": payment_time,
-                "expires_at": payment_time + timedelta(days=1),
-                "merchant_id": admin_merchant.id,
-                "sender_prepare_result": f'{{"status": "prepared", "reserved_amount": {amount}, "reservation_id": "ADMIN_RES{i:03d}"}}',
-                "receiver_prepare_result": '{"status": "prepared", "message": "Ready to receive"}',
-                "two_phase_metadata": f'{{"timeout_seconds": 300, "started_at": "{(payment_time - timedelta(minutes=2)).isoformat()}"}}'
-            }
-            
-            payment = PaymentRequest(**payment_data)
-            session.add(payment)
-            admin_payments.append(payment)
-            print(f"  ✅ Платеж админа {payment.payment_reference} - {payment.amount} {payment.currency}")
-        
-        session.commit()
-        print(f"  👤 Создано {len(admin_payments)} платежей для админа")
-    else:
-        print("  ⚠️ Админ не найден, платежи не созданы")
-    
-    return created_payments
+        session.add(payment_data)
+        print(f"  ✅ Платеж {payment_data.payment_reference} - {payment_data.amount} {payment_data.currency} ({payment_data.status.value})")
 
-def create_test_merchant_qr_codes(session):
-    """Создание тестовых QR-кодов для продавцов"""
-    print("📱 Создание тестовых QR-кодов для продавцов...")
-    
+    session.commit()
+    print("💳 Унифицированные платежи созданы успешно!")
+    return test_payments
+
+def create_test_qr_codes(session):
+    """Создание тестовых QR-кодов для продавцов и админов"""
+    print("📱 Создание тестовых унифицированных QR-кодов...")
+
     merchants = session.query(Merchant).all()
-    
-    if not merchants:
-        print("⚠️ Нет продавцов для создания QR-кодов")
-        return []
-    
+    admins = session.query(Admin).all()
     qr_codes = []
-    for merchant in merchants:
-        # Пропускаем новых тестовых пользователей
-        if merchant.email in ["test1@example.com", "test2@example.com"]:
-            print(f"  ⏭️ Пропускаем QR-коды для {merchant.name} (тестовый пользователь)")
-            continue
-            
-        # Создаем несколько QR-кодов для каждого продавца
-        for i in range(3):
-            qr_code = QRCode(
-                merchant_id=merchant.id,
-                name=f"QR-код {i+1} - {merchant.name}",
-                description=f"Тестовый QR-код для {merchant.name}",
-                amount=1000.0 + (i * 500),
-                currency="KGS",
-                qr_token=secrets.token_urlsafe(32),
-                qr_url=f"{settings.BASE_URL}/pay?token={secrets.token_urlsafe(32)}",
-                expires_at=datetime.now(timezone.utc).replace(tzinfo=timezone.utc) + timedelta(days=30),
-                max_uses=1,  # Одноразовые QR-коды
-                current_uses=0,  # Еще не использованы
-                is_active=True
-            )
-            session.add(qr_code)
-            qr_codes.append(qr_code)
-            print(f"  ✅ QR-код для {merchant.name} - {qr_code.amount} {qr_code.currency}")
-    
-    session.commit()
-    print("📱 QR-коды созданы успешно!")
-    
-    # Создаем дополнительные QR-коды для админа
-    print("  👤 Создание QR-кодов для админа...")
-    admin_merchant = session.query(Merchant).filter(Merchant.email == "admin@gmail.com").first()
-    
-    if admin_merchant:
-        admin_qr_codes = []
-        for i in range(5):  # 5 QR-кодов для админа
-            qr_code = QRCode(
-                merchant_id=admin_merchant.id,
-                name=f"QR-код админа {i+1}",
-                description=f"Специальный QR-код для админа #{i + 1}",
-                amount=1000.0 + (i * 500),
-                currency="KGS",
-                qr_token=secrets.token_urlsafe(32),
-                qr_url=f"{settings.BASE_URL}/pay?token={secrets.token_urlsafe(32)}",
-                expires_at=datetime.now(timezone.utc).replace(tzinfo=timezone.utc) + timedelta(days=30),
-                max_uses=1,  # Одноразовые QR-коды
-                current_uses=0,  # Еще не использованы
-                is_active=True
-            )
-            session.add(qr_code)
-            admin_qr_codes.append(qr_code)
-            print(f"  ✅ QR-код админа #{i+1} - {qr_code.amount} {qr_code.currency}")
-        
-        session.commit()
-        print(f"  👤 Создано {len(admin_qr_codes)} QR-кодов для админа")
-    else:
-        print("  ⚠️ Админ не найден, QR-коды не созданы")
-    
-    return qr_codes
 
-def create_test_merchant_payments(session):
-    """Создание тестовых платежей продавцов"""
-    print("💰 Создание тестовых платежей продавцов...")
-    
-    merchants = session.query(Merchant).all()
-    qr_codes = session.query(QRCode).all()
-    banks = session.query(Bank).all()
-    
-    if not merchants:
-        print("⚠️ Нет продавцов для создания платежей")
-        return []
-    
-    merchant_payments = []
-    now = datetime.now(timezone.utc)
-    
-    # Создаем платежи для каждого продавца
-    for merchant in merchants:
-        # Пропускаем новых тестовых пользователей
-        if merchant.email in ["test1@example.com", "test2@example.com"]:
-            print(f"  ⏭️ Пропускаем платежи для {merchant.name} (тестовый пользователь)")
-            continue
-            
-        print(f"  📊 Создание платежей для {merchant.name}...")
-        
-        # Создаем 10 платежей для каждого продавца
-        for i in range(10):
-            # Распределяем платежи по времени за последние 7 дней
-            if i < 3:  # Платежи за сегодня
-                payment_time = now - timedelta(hours=i*3)
-            elif i < 6:  # Платежи за вчера  
-                payment_time = now - timedelta(days=1, hours=(i-3)*4)
-            elif i < 8:  # Платежи за позавчера
-                payment_time = now - timedelta(days=2, hours=(i-6)*5)
-            else:  # Платежи за 3 дня назад
-                payment_time = now - timedelta(days=3, hours=(i-8)*6)
-            
-            # 80% успешных платежей (8 из 10)
-            is_successful = i < 8  # Первые 8 платежей успешные
-            
-            # Выбираем случайный банк
-            bank = banks[i % len(banks)] if banks else None
-            
-            payment = MerchantPayment(
+    # QR-код для продавца
+    if merchants:
+        merchant = merchants[0]
+        qr_codes.append(
+            UnifiedQRCode(
                 merchant_id=merchant.id,
-                qr_code_id=qr_codes[i % len(qr_codes)].id if qr_codes else None,
-                outlet_id=None,
-                amount=round(100.0 + (i * 150) + (merchant.id * 50), 2),  # Разные суммы
+                name=f"QR для {merchant.name}",
+                description="Статический QR для магазина",
+                amount=None,  # Динамический
                 currency="KGS",
-                status="completed" if is_successful else "failed",
-                payer_phone=f"+996700{123456 + (merchant.id * 10) + i}",
-                payer_bank_code=bank.code if bank else "DEMO",
-                transaction_id=f"TX{merchant.id:03d}{i+1:03d}",
-                paid_at=payment_time if is_successful else None,
-                created_at=payment_time
+                qr_token="UQRC_M_" + secrets.token_hex(16),
+                qr_url=f"{settings.BASE_URL}/pay?token=UQRC_M_{secrets.token_hex(16)}",
+                is_active=True,
             )
-            session.add(payment)
-            merchant_payments.append(payment)
-            
-            status_emoji = "✅" if is_successful else "❌"
-            print(f"    {status_emoji} Платеж {payment.transaction_id} - {payment.amount} {payment.currency} ({payment.status})")
-    
+        )
+
+    # QR-код для админа
+    if admins:
+        admin = admins[0]
+        qr_codes.append(
+            UnifiedQRCode(
+                admin_id=admin.id,
+                name="QR для мероприятия",
+                description="QR для регистрации на конференции",
+                amount=2500.0,
+                currency="KGS",
+                qr_token="UQRC_A_" + secrets.token_hex(16),
+                qr_url=f"{settings.BASE_URL}/pay?token=UQRC_A_{secrets.token_hex(16)}",
+                expires_at=datetime.now(timezone.utc) + timedelta(days=10),
+                max_uses=100,
+                is_active=True,
+            )
+        )
+
+    for qr_code_data in qr_codes:
+        session.add(qr_code_data)
+        owner_type = "Продавец" if qr_code_data.merchant_id else "Админ"
+        print(f"  ✅ QR-код для {owner_type} - {qr_code_data.name}")
+
     session.commit()
-    print(f"💰 Создано {len(merchant_payments)} платежей продавцов!")
-    print(f"   ✅ Успешных: {len([p for p in merchant_payments if p.status == 'completed'])}")
-    print(f"   ❌ Неудачных: {len([p for p in merchant_payments if p.status == 'failed'])}")
-    return merchant_payments
+    print("📱 Унифицированные QR-коды созданы успешно!")
+    return qr_codes
 
 def create_test_merchant_settings(session):
     """Создание тестовых настроек для продавцов"""
@@ -838,107 +608,50 @@ def create_test_admins(session):
 
 
 def create_two_phase_operations(session):
-    """Создание тестовых логов двухфазных операций"""
+    """Создание тестовых логов двухфазных операций для UnifiedPayment"""
     print("🔄 Создание логов двухфазных операций...")
-    
-    # Получаем завершенные платежи
-    completed_payments = session.query(PaymentRequest).filter(
-        PaymentRequest.status == TransactionStatus.COMPLETED
+
+    completed_payments = session.query(UnifiedPayment).filter(
+        UnifiedPayment.status == TransactionStatus.COMPLETED
     ).all()
-    
-    aborted_payments = session.query(PaymentRequest).filter(
-        PaymentRequest.status == TransactionStatus.ABORTED
-    ).all()
-    
-    now = datetime.now(timezone.utc)
-    
+
     operations = []
-    
-    # Логи для завершенных транзакций
     for payment in completed_payments:
         if payment.transaction_id:
-            # Prepare операции
-            for bank_role, bank_code in [("sender", payment.sender_bank_code), ("receiver", payment.receiver_bank_code)]:
-                if bank_code:
-                    # Request
-                    op_request = TwoPhaseOperation(
-                        payment_token=payment.token,
-                        transaction_id=payment.transaction_id,
-                        phase="prepare",
-                        operation_type="request",
-                        bank_code=bank_code,
-                        bank_role=bank_role,
-                        request_data='{"transaction_id": "' + payment.transaction_id + '", "amount": ' + str(payment.amount) + ', "bank_role": "' + bank_role + '"}',
-                        response_data='{"status": "prepared", "reservation_id": "RES' + secrets.token_hex(4) + '"}',
-                        response_status="prepared",
-                        started_at=payment.prepare_started_at or (now - timedelta(hours=2, minutes=5)),
-                        completed_at=payment.prepare_completed_at or (now - timedelta(hours=2, minutes=4)),
-                        duration_ms=60000
-                    )
-                    operations.append(op_request)
-                    
-                    # Commit операции
-                    op_commit = TwoPhaseOperation(
-                        payment_token=payment.token,
-                        transaction_id=payment.transaction_id,
-                        phase="commit",
-                        operation_type="request",
-                        bank_code=bank_code,
-                        bank_role=bank_role,
-                        request_data='{"transaction_id": "' + payment.transaction_id + '", "bank_role": "' + bank_role + '"}',
-                        response_data='{"status": "committed", "actual_amount": ' + str(payment.paid_amount or payment.amount) + '}',
-                        response_status="committed",
-                        started_at=payment.commit_started_at or (now - timedelta(hours=2, minutes=3)),
-                        completed_at=payment.commit_completed_at or (now - timedelta(hours=2)),
-                        duration_ms=45000
-                    )
-                    operations.append(op_commit)
-    
-    # Логи для отмененных транзакций
-    for payment in aborted_payments:
-        if payment.transaction_id:
-            # Prepare и Abort операции
-            for bank_role, bank_code in [("sender", payment.sender_bank_code), ("receiver", payment.receiver_bank_code)]:
-                if bank_code:
-                    # Prepare request
-                    op_prepare = TwoPhaseOperation(
-                        payment_token=payment.token,
-                        transaction_id=payment.transaction_id,
-                        phase="prepare",
-                        operation_type="request",
-                        bank_code=bank_code,
-                        bank_role=bank_role,
-                        request_data='{"transaction_id": "' + payment.transaction_id + '", "amount": ' + str(payment.amount) + ', "bank_role": "' + bank_role + '"}',
-                        response_data='{"status": "aborted" if bank_role == "receiver" else "prepared", "error_code": "ACCOUNT_BLOCKED"}' if bank_role == "receiver" else '{"status": "prepared", "reservation_id": "RES' + secrets.token_hex(4) + '"}',
-                        response_status="aborted" if bank_role == "receiver" else "prepared",
-                        started_at=payment.prepare_started_at or (now - timedelta(hours=1, minutes=10)),
-                        completed_at=payment.prepare_completed_at or (now - timedelta(hours=1, minutes=9)),
-                        duration_ms=30000,
-                        error_message="Account blocked" if bank_role == "receiver" else None
-                    )
-                    operations.append(op_prepare)
-                    
-                    # Abort операции
-                    op_abort = TwoPhaseOperation(
-                        payment_token=payment.token,
-                        transaction_id=payment.transaction_id,
-                        phase="abort",
-                        operation_type="request",
-                        bank_code=bank_code,
-                        bank_role=bank_role,
-                        request_data='{"transaction_id": "' + payment.transaction_id + '", "abort_reason": "Transaction preparation failed"}',
-                        response_data='{"status": "aborted", "released_amount": ' + str(payment.amount) + '}',
-                        response_status="aborted",
-                        started_at=payment.abort_started_at or (now - timedelta(hours=1, minutes=8)),
-                        completed_at=payment.abort_completed_at or (now - timedelta(hours=1, minutes=7)),
-                        duration_ms=15000
-                    )
-                    operations.append(op_abort)
-    
-    # Добавляем все операции в сессию
+            # Пример лога для операции PREPARE
+            op_prepare = TwoPhaseOperation(
+                payment_token=payment.payment_reference,  # Используем reference как токен
+                transaction_id=payment.transaction_id,
+                phase="prepare",
+                operation_type="request",
+                bank_code=payment.payer_bank_code,
+                bank_role="sender",
+                request_data=f'{{"amount": {payment.amount}}}',
+                response_status="prepared",
+                started_at=payment.created_at,
+                completed_at=payment.created_at + timedelta(seconds=10),
+                duration_ms=150
+            )
+            operations.append(op_prepare)
+
+            # Пример лога для операции COMMIT
+            op_commit = TwoPhaseOperation(
+                payment_token=payment.payment_reference,
+                transaction_id=payment.transaction_id,
+                phase="commit",
+                operation_type="request",
+                bank_code=payment.payer_bank_code,
+                bank_role="sender",
+                response_status="committed",
+                started_at=payment.created_at + timedelta(seconds=15),
+                completed_at=payment.paid_at,
+                duration_ms=200
+            )
+            operations.append(op_commit)
+
     for operation in operations:
         session.add(operation)
-        
+
     session.commit()
     print(f"🔄 Создано {len(operations)} логов двухфазных операций!")
     return operations
@@ -1019,94 +732,31 @@ def create_trading_points(session):
     return trading_points
 
 def create_sample_timeline_events(session):
-    """Создание примеров событий таймлайна"""
+    """Создание примеров событий таймлайна для UnifiedPayment"""
     print("📅 Создание событий таймлайна...")
-    
-    # Получаем платежи для которых создадим события
-    payments = session.query(PaymentRequest).limit(3).all()
-    now = datetime.now(timezone.utc)
-    
+
+    payments = session.query(UnifiedPayment).limit(2).all()
     events = []
-    for i, payment in enumerate(payments):
-        # Создание QR
-        event1 = TimelineEvent(
-            payment_token=payment.token,
-            event_type='qr_created',
-            title='QR-код создан',
-            description=f'Создан QR-код для платежа {payment.payment_reference}',
-            actor='merchant',
-            source='api',
+    for payment in payments:
+        event = TimelineEvent(
+            payment_token=payment.payment_reference,
+            transaction_id=payment.transaction_id,
+            event_type='payment_created',
+            title='Унифицированный платеж создан',
+            description=f'Создан платеж на сумму {payment.amount} {payment.currency}',
+            actor='system',
+            source='init_db',
             status='success',
-            timestamp_utc=payment.created_at,
-            metadata_json='{"amount": ' + str(payment.amount) + ', "currency": "' + payment.currency + '"}'
+            timestamp_utc=payment.created_at
         )
-        events.append(event1)
-        
-        # Запрос информации (если не в PENDING)
-        if payment.status != TransactionStatus.PENDING:
-            event2 = TimelineEvent(
-                payment_token=payment.token,
-                event_type='info_requested',
-                title='Банк запросил информацию',
-                description=f'Банк {payment.receiver_bank_code} запросил данные платежа',
-                actor='bank',
-                source='api',
-                status='info',
-                timestamp_utc=payment.created_at + timedelta(minutes=5 + i),
-                metadata_json='{"bank_code": "' + payment.receiver_bank_code + '"}'
-            )
-            events.append(event2)
-        
-        # Если транзакция завершена или отменена
-        if payment.status in [TransactionStatus.COMPLETED, TransactionStatus.ABORTED]:
-            if payment.transaction_id:
-                event3 = TimelineEvent(
-                    payment_token=payment.token,
-                    transaction_id=payment.transaction_id,
-                    event_type='two_phase_started',
-                    title='Двухфазная транзакция запущена',
-                    description=f'Начата обработка транзакции {payment.transaction_id}',
-                    actor='system',
-                    source='two_phase_commit',
-                    status='info',
-                    timestamp_utc=payment.prepare_started_at or (payment.created_at + timedelta(minutes=10 + i))
-                )
-                events.append(event3)
-                
-                if payment.status == TransactionStatus.COMPLETED:
-                    event4 = TimelineEvent(
-                        payment_token=payment.token,
-                        transaction_id=payment.transaction_id,
-                        event_type='transaction_completed',
-                        title='Транзакция завершена',
-                        description=f'Платеж на сумму {payment.paid_amount} {payment.currency} успешно обработан',
-                        actor='system',
-                        source='two_phase_commit',
-                        status='success',
-                        timestamp_utc=payment.commit_completed_at or (payment.created_at + timedelta(minutes=15 + i))
-                    )
-                    events.append(event4)
-                elif payment.status == TransactionStatus.ABORTED:
-                    event4 = TimelineEvent(
-                        payment_token=payment.token,
-                        transaction_id=payment.transaction_id,
-                        event_type='transaction_aborted',
-                        title='Транзакция отменена',
-                        description=f'Транзакция {payment.transaction_id} была отменена',
-                        actor='system',
-                        source='two_phase_commit',
-                        status='warning',
-                        timestamp_utc=payment.abort_completed_at or (payment.created_at + timedelta(minutes=12 + i))
-                    )
-                    events.append(event4)
-    
+        events.append(event)
+
     for event in events:
         session.add(event)
-    
+
     session.commit()
     print(f"📅 Создано {len(events)} событий таймлайна!")
     return events
-
 
 
 def main():
@@ -1118,73 +768,52 @@ def main():
 
     print("🚀 Инициализация базы данных QRPayHub")
     print("=" * 50)
-    
+
     try:
         if args.reset:
             reset_database()
 
-        # Создаем таблицы
         create_tables()
-        
-        # Создаем сессию
         SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
         session = SessionLocal()
-        
+
         try:
             if not args.no_seed:
-                # Создаем тестовые данные в правильном порядке
                 print("📦 Создание базовых данных...")
                 create_test_banks(session)
                 create_test_merchants(session)
                 create_system_settings(session)
                 create_test_admins(session)
-                
-                print("\n📦 Создание данных платежей...")
-                create_test_payments(session)
-                create_two_phase_operations(session)  # Логи двухфазных операций
-                create_sample_timeline_events(session)  # События таймлайна
-                
-                print("\n📦 Создание данных продавцов...")
-                create_trading_points(session)  # Торговые точки
-                create_test_merchant_qr_codes(session)
-                create_test_merchant_payments(session)
+                create_trading_points(session)
                 create_test_merchant_settings(session)
-                
-                print("\n📦 Создание дополнительных данных...")
-                # Sandbox и fallback данные удалены
+
+                print("\n📦 Создание унифицированных данных...")
+                create_test_qr_codes(session)
+                create_test_payments(session)
+                create_two_phase_operations(session)
+                create_sample_timeline_events(session)
             else:
                 print("ℹ️ Пропускаю наполнение тестовыми данными (--no-seed)")
-            
+
             print("\n" + "=" * 50)
             print("🎉 База данных успешно инициализирована!")
             print("\n📊 Текущие данные:")
             print(f"  🏦 Банков: {session.query(Bank).count()}")
             print(f"  🏪 Продавцов: {session.query(Merchant).count()}")
-            print(f"  🏢 Торговых точек: {session.query(TradingPoint).count()}")
-            print(f"  💳 Платежей (requests): {session.query(PaymentRequest).count()}")
-            print(f"  📱 QR-кодов: {session.query(QRCode).count()}")
-            print(f"  💰 Платежей продавцов: {session.query(MerchantPayment).count()}")
             print(f"  👨‍💼 Администраторов: {session.query(Admin).count()}")
-            
+            print(f"  📱 Унифицированных QR-кодов: {session.query(UnifiedQRCode).count()}")
+            print(f"  💳 Унифицированных Платежей: {session.query(UnifiedPayment).count()}")
+
             print(f"\n🔄 Двухфазные транзакции:")
             print(f"  📊 Операций двухфазного коммита: {session.query(TwoPhaseOperation).count()}")
-            print(f"  📝 Записей транзакций: {session.query(TransactionRecord).count()}")
-            print(f"  💸 Биллинговых записей: {session.query(BillingRecord).count()}")
-            
+
             print(f"\n📋 Системные данные:")
             print(f"  ⚙️ Системных настроек: {session.query(SystemSetting).count()}")
             print(f"  📅 События таймлайна: {session.query(TimelineEvent).count()}")
-            print(f"  📊 Логи аудита: {session.query(AuditLog).count()}")
-            print(f"  📈 Записей rate limiting: {session.query(RateLimitRecord).count()}")
-            
-            print(f"\n🧪 Тестирование:")
-            print(f"  🏦 Песочница банков: удалена")
-            print(f"  🔄 Fallback сценариев: удалены")
-            
-            # Статистика по статусам транзакций
-            print("\n📈 Статистика транзакций:")
+
+            print("\n📈 Статистика унифицированных платежей:")
             for status in TransactionStatus:
-                count = session.query(PaymentRequest).filter(PaymentRequest.status == status).count()
+                count = session.query(UnifiedPayment).filter(UnifiedPayment.status == status).count()
                 if count > 0:
                     emoji = {
                         'pending': '⏳',
@@ -1196,34 +825,14 @@ def main():
                         'aborted': '❌'
                     }.get(status.value, '📋')
                     print(f"  {emoji} {status.value}: {count}")
-            
-            print("\n🔑 Токены доступа банков:")
-            banks = session.query(Bank).all()
-            for bank in banks:
-                print(f"  {bank.code}: {bank.access_token[:20]}...")
-                
-            print("\n🎯 Для тестирования двухфазных транзакций:")
-            print("  1. Запустите сервер: uvicorn app.main:app --reload")
-            print("  2. Откройте админ панель: /admin")
-            print("  3. Логин: admin, пароль: admin123")
-            print("  4. Посмотрите на транзакции в разных статусах")
-            print("  5. Тестовый эндпоинт: POST /api/v1/payment/two-phase-payment")
-            print("  6. Проверьте события в таймлайне и логи операций")
-            print("  7. Тестируйте фоновый сервис восстановления")
-            
-            print("\n💡 Примеры статусов транзакций:")
-            print("  - PENDING: Ожидает обработки")
-            print("  - PREPARING: В процессе подготовки")
-            print("  - COMPLETED: Успешно завершена")
-            print("  - ABORTED: Отменена")
-            
+
         finally:
             session.close()
-            
+
     except Exception as e:
         print(f"❌ Ошибка инициализации: {e}")
         return 1
-    
+
     return 0
 
 if __name__ == "__main__":
