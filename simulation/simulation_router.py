@@ -15,7 +15,9 @@ import time
 from typing import Optional
 
 from app.database import get_db
-from app.models.payment import PaymentRequest, TwoPhaseOperation, Bank, TransactionStatus
+from app.models.unified import UnifiedPayment as PaymentRequest
+from app.models.unified import UnifiedPayment
+from app.models.payment import TwoPhaseOperation, Bank, TransactionStatus
 from app.models.merchant import QRCode, TradingPoint
 from app.schemas.payment import PaymentInfo
 from app.schemas.bank import (
@@ -73,9 +75,9 @@ async def simulation_dashboard(request: Request, db: Session = Depends(get_db)):
     """Главная страница симулятора с выбором режима"""
     
     # Получаем статистику для отображения
-    total_payments = db.query(PaymentRequest).count()
-    active_transactions = db.query(PaymentRequest).filter(
-        PaymentRequest.status.in_(["preparing", "prepared", "committing"])
+    total_payments = db.query(UnifiedPayment).count()
+    active_transactions = db.query(UnifiedPayment).filter(
+        UnifiedPayment.status.in_(["preparing", "prepared", "committing"])
     ).count()
     
     banks = db.query(Bank).all()
@@ -332,8 +334,8 @@ async def payment_page(
         if admin_qr_code:
             logger.info(f"🎯 Обрабатываем админ QR-код: {admin_qr_code.name}, токен: {admin_qr_code.qr_token[:20]}...")
             
-            # Создаем PaymentRequest для админ QR-кода
-            payment_request = PaymentRequest(
+            # Создаем UnifiedPayment для админ QR-кода
+            payment_request = UnifiedPayment(
                 token=admin_qr_code.qr_token,
                 receiver_account=admin_qr_code.admin.bank_account or "0000000000000000",
                 receiver_bank_code=admin_qr_code.admin.bank_code or "DEMO",
@@ -343,7 +345,7 @@ async def payment_page(
                 currency=admin_qr_code.currency or "KGS",
                 payment_reference=f"ADMIN_QR_{admin_qr_code.qr_token[:8]}",
                 expires_at=admin_qr_code.expires_at or (datetime.now() + timedelta(hours=24)),
-                status=TransactionStatus.PENDING,
+                status=TransactionStatus.PENDING.value,
                 merchant_id=None,  # Явно указываем, что это не мерчантский платеж
                 sender_bank_code=bank,  # Банк отправителя из параметра
                 payer_bank_code=bank,   # Банк плательщика = банк отправителя
@@ -421,17 +423,17 @@ async def payment_page(
             #     logger.warning(f"QR-код истек: expires_at={qr_code.expires_at}, now={now}")
             #     raise HTTPException(status_code=400, detail="QR-код истек")
             
-            # Проверяем, не создан ли уже PaymentRequest для этого QR-кода
-            existing_payment = db.query(PaymentRequest).filter(
-                PaymentRequest.token == qr_code.qr_token
+            # Проверяем, не создан ли уже UnifiedPayment для этого QR-кода
+            existing_payment = db.query(UnifiedPayment).filter(
+                UnifiedPayment.token == qr_code.qr_token
             ).first()
             
             if existing_payment:
-                logger.info(f"Используем существующий PaymentRequest: {existing_payment.payment_reference}")
+                logger.info(f"Используем существующий UnifiedPayment: {existing_payment.payment_reference}")
                 payment_request = existing_payment
             else:
-                logger.info(f"Создаем новый PaymentRequest для QR-кода: {qr_code.name}")
-                # Создаем PaymentRequest на основе QR-кода
+                logger.info(f"Создаем новый UnifiedPayment для QR-кода: {qr_code.name}")
+                # Создаем UnifiedPayment на основе QR-кода
                 # Используем банк получателя из профиля продавца
                 receiver_bank_code = "DEMO"  # По умолчанию
                 if qr_code.merchant.bank_name:
@@ -452,7 +454,7 @@ async def payment_page(
                 if not qr_code.merchant.bank_account:
                     logger.warning(f"У продавца {qr_code.merchant.name} не указан банковский счет")
                 
-                payment_request = PaymentRequest(
+                payment_request = UnifiedPayment(
                     token=qr_code.qr_token,  # Используем qr_token как token
                     receiver_account=qr_code.merchant.bank_account or "0000000000000000",
                     receiver_bank_code=receiver_bank_code,
@@ -463,7 +465,7 @@ async def payment_page(
                     payment_reference=f"QR_{qr_code.qr_token[:8]}",
                     expires_at=expires_at,
                     merchant_id=qr_code.merchant_id,
-                    status=TransactionStatus.PENDING,
+                    status=TransactionStatus.PENDING.value,
                     sender_bank_code=bank,  # Банк отправителя из параметра
                     payer_bank_code=bank,   # Банк плательщика = банк отправителя
                     sender_account="1234567890123456"  # Счет плательщика
@@ -489,26 +491,26 @@ async def payment_page(
                     status="success"
                 )
         
-        # Если ни один QR код не найден, пробуем найти в PaymentRequest (для защищенных токенов)
+        # Если ни один QR код не найден, пробуем найти в UnifiedPayment (для защищенных токенов)
         if not qr_code and not admin_qr_code:
-            logger.info(f"QR код не найден, пробуем найти в PaymentRequest для токена: {token[:20]}...")
+            logger.info(f"QR код не найден, пробуем найти в UnifiedPayment для токена: {token[:20]}...")
             
-            # Пробуем найти в PaymentRequest (для защищенных токенов)
+            # Пробуем найти в UnifiedPayment (для защищенных токенов)
             token_uuid = SecureTokenService.extract_uuid_from_token(token)
             if not token_uuid:
                 logger.error(f"Неверный формат токена: {token[:20]}...")
                 raise HTTPException(status_code=400, detail="Invalid token format")
             
-            payment_request = db.query(PaymentRequest).filter(
-                PaymentRequest.token == token_uuid
+            payment_request = db.query(UnifiedPayment).filter(
+                UnifiedPayment.token == token_uuid
             ).first()
             
             if not payment_request:
-                logger.error(f"PaymentRequest не найден для токена: {token_uuid}")
+                logger.error(f"UnifiedPayment не найден для токена: {token_uuid}")
                 raise HTTPException(status_code=404, detail="Payment request not found")
             
             # В симуляторе отключаем валидацию токена для упрощения
-            logger.info(f"Найден PaymentRequest: ID={payment_request.id}, пропускаем валидацию токена в симуляторе")
+            logger.info(f"Найден UnifiedPayment: ID={payment_request.id}, пропускаем валидацию токена в симуляторе")
             
             # Проверяем валидность токена (только для информации, не блокируем)
             validation_result = SecureTokenService.validate_token(token, payment_request)
@@ -613,14 +615,14 @@ async def receiver_bank_account(
     
     logger.info(f"🏦 Открыт интерфейс банка-получателя для ID {merchant_id}")
     
-    from app.models.merchant import Merchant, MerchantPayment
+    from app.models.merchant import Merchant
     from app.models.admin import Admin, AdminQRCode
     
-    # Проверяем, есть ли активный PaymentRequest с merchant_id=None (админский платеж)
-    payment_request = db.query(PaymentRequest).filter(
-        PaymentRequest.merchant_id.is_(None),
-        PaymentRequest.status.in_(["PENDING", "COMPLETED"])
-    ).order_by(PaymentRequest.created_at.desc()).first()
+    # Проверяем, есть ли активный UnifiedPayment с merchant_id=None (админский платеж)
+    payment_request = db.query(UnifiedPayment).filter(
+        UnifiedPayment.merchant_id.is_(None),
+        UnifiedPayment.status.in_(["PENDING", "COMPLETED"])
+    ).order_by(UnifiedPayment.created_at.desc()).first()
     
     if payment_request and payment_request.payment_reference.startswith("ADMIN_QR_"):
         # Это админский платеж
@@ -677,9 +679,9 @@ async def receiver_bank_account(
         receiver_bank = db.query(Bank).filter(Bank.code == "DEMO").first()
     
     # Получаем последние платежи
-    recent_payments = db.query(MerchantPayment).filter(
-        MerchantPayment.merchant_id == merchant_id
-    ).order_by(MerchantPayment.created_at.desc()).limit(10).all()
+    recent_payments = db.query(UnifiedPayment).filter(
+        UnifiedPayment.merchant_id == merchant_id
+    ).order_by(UnifiedPayment.created_at.desc()).limit(10).all()
     
     # Базовый баланс 10500 KGS
     total_balance = 10500.0
@@ -1169,8 +1171,8 @@ async def get_transaction_logs(
     ).order_by(TwoPhaseOperation.started_at.asc()).all()
     
     # Получаем информацию о платеже
-    payment_request = db.query(PaymentRequest).filter(
-        PaymentRequest.token == token_uuid
+    payment_request = db.query(UnifiedPayment).filter(
+        UnifiedPayment.token == token_uuid
     ).first()
     
     if not payment_request:
@@ -1283,17 +1285,17 @@ async def get_merchant_balance(
     Используется для обновления интерфейса банка-получателя
     """
     
-    from app.models.merchant import Merchant, MerchantPayment
+    from app.models.merchant import Merchant
     
     merchant = db.query(Merchant).filter(Merchant.id == merchant_id).first()
     if not merchant:
         raise HTTPException(status_code=404, detail="Merchant not found")
     
     # Получаем последние платежи
-    recent_payments = db.query(MerchantPayment).filter(
-        MerchantPayment.merchant_id == merchant_id,
-        MerchantPayment.status == "completed"
-    ).order_by(MerchantPayment.created_at.desc()).limit(5).all()
+    recent_payments = db.query(UnifiedPayment).filter(
+        UnifiedPayment.merchant_id == merchant_id,
+        UnifiedPayment.status == "completed"
+    ).order_by(UnifiedPayment.created_at.desc()).limit(5).all()
     
     # Базовый баланс 10500 KGS
     total_balance = 10500.0
@@ -1372,8 +1374,8 @@ async def simulate_two_phase_payment(
                 receiver_account = merchant.bank_account or "1234567890123456"
                 receiver_name = merchant.name or "Демо Получатель"
         
-        # Создаем PaymentRequest для симуляции
-        payment_request = PaymentRequest(
+        # Создаем UnifiedPayment для симуляции
+        payment_request = UnifiedPayment(
             token=f"SIM_{secrets.token_hex(8)}",
             receiver_account=receiver_account,
             receiver_bank_code=receiver_bank_code,
@@ -1384,7 +1386,7 @@ async def simulate_two_phase_payment(
             payment_reference=f"SIM_{secrets.token_hex(4)}",
             expires_at=datetime.now() + timedelta(hours=24),
             merchant_id=request.merchant_id,
-            status=TransactionStatus.PENDING,
+            status=TransactionStatus.PENDING.value,
             sender_bank_code=request.sender_bank_code,
             payer_bank_code=request.sender_bank_code,  # Банк плательщика = банк отправителя
             sender_account=request.sender_account  # Счет плательщика из запроса
@@ -1394,9 +1396,8 @@ async def simulate_two_phase_payment(
         db.commit()
         db.refresh(payment_request)
         
-        # Создаем запись MerchantPayment в статусе "pending"
-        from app.models.merchant import MerchantPayment
-        merchant_payment = MerchantPayment(
+        # Создаем запись UnifiedPayment в статусе "pending"
+        merchant_payment = UnifiedPayment(
             merchant_id=request.merchant_id,
             qr_code_id=None,  # Будет заполнено позже, если найден QR-код
             amount=request.amount,
@@ -1406,7 +1407,12 @@ async def simulate_two_phase_payment(
             payer_bank_code=request.sender_bank_code,
             sender_account=request.sender_account,
             transaction_id=f"PAY{2024:04d}{1:02d}{1:02d}{payment_request.id:03d}",
-            created_at=datetime.now()
+            created_at=datetime.now(),
+            receiver_name=payment_request.receiver_name,
+            receiver_account=payment_request.receiver_account,
+            receiver_bank_code=payment_request.receiver_bank_code,
+            description=payment_request.description,
+            payment_reference=payment_request.payment_reference
         )
         
         db.add(merchant_payment)
@@ -1450,7 +1456,7 @@ async def simulate_two_phase_payment(
         
         logger.info(f"✅ Двухфазная транзакция завершена: {result}")
         
-        # НЕ обновляем запись MerchantPayment здесь - оставляем статус "pending"
+        # НЕ обновляем запись UnifiedPayment здесь - оставляем статус "pending"
         # Обновление произойдет в finalize-payment
         if result.get("success"):
             logger.info(f"✅ Двухфазная транзакция выполнена успешно, запись остается в статусе 'pending'")
@@ -1488,12 +1494,10 @@ async def simulate_payment_completion(
     """
     Симуляция завершения платежа - уменьшает баланс продавца
     """
-    from app.models.merchant import MerchantPayment
-    
     logger.info(f"💰 Симуляция завершения платежа: продавец {request.merchant_id}, сумма {request.amount}")
     
     # Создаем запись о платеже
-    payment = MerchantPayment(
+    payment = UnifiedPayment(
         merchant_id=request.merchant_id,
         amount=request.amount,
         status="completed",
@@ -1503,7 +1507,12 @@ async def simulate_payment_completion(
         paid_at=datetime.now(),  # Заполняем время оплаты
         payer_bank_code=getattr(request, 'sender_bank_code', "DEMO"),
         sender_account=getattr(request, 'sender_account', "1234567890123456"),
-        currency=getattr(request, 'currency', "KGS")
+        currency=getattr(request, 'currency', "KGS"),
+        receiver_name="Simulated Receiver",
+        receiver_account="Simulated Account",
+        receiver_bank_code="SIM",
+        description="Simulated payment completion",
+        payment_reference=f"SIM_REF_{secrets.token_hex(4)}"
     )
     
     db.add(payment)
@@ -1539,8 +1548,6 @@ async def finalize_payment(
     """
     Финальное завершение платежа - списывает баланс только при подтверждении пользователем
     """
-    from app.models.merchant import MerchantPayment
-    
     logger.info(f"💰 Финальное завершение платежа: продавец {request.merchant_id}, сумма {request.amount}")
     
     try:
@@ -1569,16 +1576,16 @@ async def finalize_payment(
         except Exception as e:
             logger.warning(f"Не удалось найти QR-код или торговую точку: {e}")
         
-        # Находим существующий PaymentRequest для обновления
-        payment_request = db.query(PaymentRequest).filter(
-            PaymentRequest.merchant_id == request.merchant_id,
-            PaymentRequest.amount == request.amount,
-            PaymentRequest.status == TransactionStatus.PENDING
-        ).order_by(PaymentRequest.created_at.desc()).first()
+        # Находим существующий UnifiedPayment для обновления
+        payment_request = db.query(UnifiedPayment).filter(
+            UnifiedPayment.merchant_id == request.merchant_id,
+            UnifiedPayment.amount == request.amount,
+            UnifiedPayment.status == TransactionStatus.PENDING.value
+        ).order_by(UnifiedPayment.created_at.desc()).first()
         
         if payment_request:
-            # Обновляем существующий PaymentRequest
-            payment_request.status = TransactionStatus.COMPLETED
+            # Обновляем существующий UnifiedPayment
+            payment_request.status = TransactionStatus.COMPLETED.value
             payment_request.paid_at = datetime.now()
             payment_request.payer_phone = "+996700123456"
             payment_request.payer_bank_code = request.sender_bank_code
@@ -1590,20 +1597,20 @@ async def finalize_payment(
             
             transaction_id = f"PAY{2024:04d}{1:02d}{1:02d}{payment_request.id:03d}"
             
-            # Ищем существующую запись MerchantPayment для обновления
-            # Сначала ищем по transaction_id, который должен совпадать с PaymentRequest
-            existing_merchant_payment = db.query(MerchantPayment).filter(
-                MerchantPayment.transaction_id == transaction_id,
-                MerchantPayment.merchant_id == request.merchant_id
+            # Ищем существующую запись UnifiedPayment для обновления
+            # Сначала ищем по transaction_id, который должен совпадать с UnifiedPayment
+            existing_merchant_payment = db.query(UnifiedPayment).filter(
+                UnifiedPayment.transaction_id == transaction_id,
+                UnifiedPayment.merchant_id == request.merchant_id
             ).first()
             
             # Если не найдено по transaction_id, ищем по merchant_id и amount
             if not existing_merchant_payment:
-                existing_merchant_payment = db.query(MerchantPayment).filter(
-                    MerchantPayment.merchant_id == request.merchant_id,
-                    MerchantPayment.amount == request.amount,
-                    MerchantPayment.status.in_(["pending", "completed"])
-                ).order_by(MerchantPayment.created_at.desc()).first()
+                existing_merchant_payment = db.query(UnifiedPayment).filter(
+                    UnifiedPayment.merchant_id == request.merchant_id,
+                    UnifiedPayment.amount == request.amount,
+                    UnifiedPayment.status.in_(["pending", "completed"])
+                ).order_by(UnifiedPayment.created_at.desc()).first()
             
             logger.info(f"🔍 Поиск существующей записи: merchant_id={request.merchant_id}, amount={request.amount}, transaction_id={transaction_id}")
             logger.info(f"🔍 Найдено записей: {existing_merchant_payment is not None}")
@@ -1621,10 +1628,10 @@ async def finalize_payment(
                 db.commit()
                 
                 merchant_payment = existing_merchant_payment
-                logger.info(f"✅ Обновлена существующая запись MerchantPayment: {merchant_payment.id}")
+                logger.info(f"✅ Обновлена существующая запись UnifiedPayment: {merchant_payment.id}")
             else:
                 # Создаем новую запись только если не найдена существующая
-                merchant_payment = MerchantPayment(
+                merchant_payment = UnifiedPayment(
                     merchant_id=request.merchant_id,
                     amount=request.amount,
                     status="completed",
@@ -1636,17 +1643,22 @@ async def finalize_payment(
                     outlet_id=trading_point.id if trading_point else None,
                     payer_bank_code=request.sender_bank_code,
                     sender_account=getattr(request, 'sender_account', "1234567890123456"),
-                    currency="KGS"
+                    currency="KGS",
+                    receiver_name=payment_request.receiver_name,
+                    receiver_account=payment_request.receiver_account,
+                    receiver_bank_code=payment_request.receiver_bank_code,
+                    description=payment_request.description,
+                    payment_reference=payment_request.payment_reference
                 )
                 
                 db.add(merchant_payment)
                 db.commit()
                 db.refresh(merchant_payment)
                 
-                logger.info(f"✅ Создана новая запись в MerchantPayment: ID={merchant_payment.id}")
+                logger.info(f"✅ Создана новая запись в UnifiedPayment: ID={merchant_payment.id}")
         else:
-            # Если PaymentRequest не найден, создаем новый MerchantPayment
-            payment = MerchantPayment(
+            # Если UnifiedPayment не найден, создаем новый UnifiedPayment
+            payment = UnifiedPayment(
                 merchant_id=request.merchant_id,
                 amount=request.amount,
                 status="completed",
@@ -1658,7 +1670,12 @@ async def finalize_payment(
                 outlet_id=trading_point.id if trading_point else None,
                 payer_bank_code=request.sender_bank_code,
                 sender_account=getattr(request, 'sender_account', "1234567890123456"),
-                currency="KGS"
+                currency="KGS",
+                receiver_name="Simulated Receiver",
+                receiver_account="Simulated Account",
+                receiver_bank_code="SIM",
+                description="Simulated payment",
+                payment_reference=f"SIM_REF_{secrets.token_hex(4)}"
             )
             
             db.add(payment)
@@ -1667,15 +1684,15 @@ async def finalize_payment(
             
             transaction_id = payment.transaction_id
         
-        # Находим соответствующий PaymentRequest для правильного transaction_id
-        payment_request = db.query(PaymentRequest).filter(
-            PaymentRequest.merchant_id == request.merchant_id,
-            PaymentRequest.amount == request.amount
-        ).order_by(PaymentRequest.created_at.desc()).first()
+        # Находим соответствующий UnifiedPayment для правильного transaction_id
+        payment_request = db.query(UnifiedPayment).filter(
+            UnifiedPayment.merchant_id == request.merchant_id,
+            UnifiedPayment.amount == request.amount
+        ).order_by(UnifiedPayment.created_at.desc()).first()
         
         # Логируем событие завершения платежа
         if payment_request:
-            # Если обновляли PaymentRequest
+            # Если обновляли UnifiedPayment
             TimelineService.record_event(
                 db=db,
                 transaction_id=transaction_id,
@@ -1688,7 +1705,7 @@ async def finalize_payment(
             )
             logger.info(f"✅ Платеж записан в БД: {transaction_id}")
         else:
-            # Если создавали MerchantPayment
+            # Если создавали UnifiedPayment
             TimelineService.record_event(
                 db=db,
                 transaction_id=transaction_id,

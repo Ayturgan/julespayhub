@@ -2,8 +2,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.payment import PaymentRequest, TransactionRecord, PaymentLog, Bank
-from app.models.merchant import MerchantPayment, QRCode
+from app.models.unified import UnifiedPayment
+from app.models.payment import TransactionRecord, PaymentLog, Bank
+from app.models.merchant import QRCode
 from app.services.webhook_service import WebhookService
 from app.services.hybrid_logging_service import hybrid_logging_service
 
@@ -23,20 +24,20 @@ async def get_transaction_history(
     db: Session = Depends(get_db)
 ):
     """
-    История транзакций для мониторинга (используем PaymentRequest)
+    История транзакций для мониторинга (используем UnifiedPayment)
     """
-    query = db.query(PaymentRequest)
+    query = db.query(UnifiedPayment)
     
     # Показываем все платежи (убрали ограничение на SIM_платежи)
     
     if transaction_id:
-        query = query.filter(PaymentRequest.token.contains(transaction_id))
+        query = query.filter(UnifiedPayment.transaction_id.contains(transaction_id))
     if payment_token:
-        query = query.filter(PaymentRequest.token == payment_token)
+        query = query.filter(UnifiedPayment.qr_code.has(qr_token=payment_token))
     if bank_code:
-        query = query.filter(PaymentRequest.receiver_bank_code == bank_code)
+        query = query.filter(UnifiedPayment.receiver_bank_code == bank_code)
     
-    payments = query.order_by(PaymentRequest.created_at.desc()).limit(limit).all()
+    payments = query.order_by(UnifiedPayment.created_at.desc()).limit(limit).all()
     
     # Получаем названия банков для всех транзакций
     transactions_data = []
@@ -58,8 +59,8 @@ async def get_transaction_history(
         
         transactions_data.append({
             "id": p.id,
-            "transaction_id": f"PAY{2024:04d}{1:02d}{1:02d}{p.id:03d}",
-            "payment_token": p.token,
+            "transaction_id": p.transaction_id,
+            "payment_token": p.qr_code.qr_token if p.qr_code else None,
             "amount": p.amount,
             "currency": p.currency,
             "sender_bank_code": p.payer_bank_code or p.sender_bank_code,
@@ -86,8 +87,8 @@ async def get_recent_transactions(
     """
     Получение последних транзакций для дашборда
     """
-    payments = db.query(PaymentRequest).order_by(
-        PaymentRequest.created_at.desc()
+    payments = db.query(UnifiedPayment).order_by(
+        UnifiedPayment.created_at.desc()
     ).limit(limit).all()
     
     # Получаем названия банков для всех транзакций
@@ -131,7 +132,7 @@ async def get_transaction_timeline(
     """
     Детальный таймлайн транзакции с техническими деталями
     """
-    from app.models.payment import PaymentRequest, PaymentLog
+    from app.models.payment import PaymentLog
     from app.models.merchant import QRCode
     from app.models.timeline import TimelineEvent
     from sqlalchemy import and_
@@ -142,25 +143,25 @@ async def get_transaction_timeline(
 
     # Ищем платежный запрос по ID, payment_reference или token (только SIM_платежи)
     print(f"🔍 Поиск по ID: {transaction_id}")
-    payment_request = db.query(PaymentRequest).filter(
-        PaymentRequest.token.like('SIM_%')  # Показываем только SIM_платежи
-    ).filter(PaymentRequest.id == transaction_id).first()
+    payment_request = db.query(UnifiedPayment).filter(
+        UnifiedPayment.transaction_id.like('SIM_%')  # Показываем только SIM_платежи
+    ).filter(UnifiedPayment.id == transaction_id).first()
     if payment_request:
         print(f"✅ Найдена по ID: {payment_request.id}")
     
     if not payment_request:
         print(f"🔍 Поиск по payment_reference: {transaction_id}")
-        payment_request = db.query(PaymentRequest).filter(
-            PaymentRequest.token.like('SIM_%')  # Показываем только SIM_платежи
-        ).filter(PaymentRequest.payment_reference == transaction_id).first()
+        payment_request = db.query(UnifiedPayment).filter(
+            UnifiedPayment.transaction_id.like('SIM_%')  # Показываем только SIM_платежи
+        ).filter(UnifiedPayment.payment_reference == transaction_id).first()
         if payment_request:
             print(f"✅ Найдена по payment_reference: {payment_request.id}")
     
     if not payment_request:
         print(f"🔍 Поиск по token: {transaction_id}")
-        payment_request = db.query(PaymentRequest).filter(
-            PaymentRequest.token.like('SIM_%')  # Показываем только SIM_платежи
-        ).filter(PaymentRequest.token == transaction_id).first()
+        payment_request = db.query(UnifiedPayment).filter(
+            UnifiedPayment.transaction_id.like('SIM_%')  # Показываем только SIM_платежи
+        ).filter(UnifiedPayment.qr_code.has(qr_token=transaction_id)).first()
         if payment_request:
             print(f"✅ Найдена по token: {payment_request.id}")
     
@@ -168,9 +169,9 @@ async def get_transaction_timeline(
         # Попробуем найти по числовому ID
         try:
             print(f"🔍 Попытка конвертации в число: {transaction_id}")
-            payment_request = db.query(PaymentRequest).filter(
-                PaymentRequest.token.like('SIM_%')  # Показываем только SIM_платежи
-            ).filter(PaymentRequest.id == int(transaction_id)).first()
+            payment_request = db.query(UnifiedPayment).filter(
+                UnifiedPayment.transaction_id.like('SIM_%')  # Показываем только SIM_платежи
+            ).filter(UnifiedPayment.id == int(transaction_id)).first()
             if payment_request:
                 print(f"✅ Найдена по числовому ID: {payment_request.id}")
         except (ValueError, TypeError) as e:
@@ -187,9 +188,9 @@ async def get_transaction_timeline(
                 # Убираем ведущие нули
                 payment_id = int(id_part.lstrip('0') or '0')
                 print(f"🔍 Извлечен ID из {transaction_id}: {payment_id}")
-                payment_request = db.query(PaymentRequest).filter(
-                    PaymentRequest.token.like('SIM_%')  # Показываем только SIM_платежи
-                ).filter(PaymentRequest.id == payment_id).first()
+                payment_request = db.query(UnifiedPayment).filter(
+                    UnifiedPayment.transaction_id.like('SIM_%')  # Показываем только SIM_платежи
+                ).filter(UnifiedPayment.id == payment_id).first()
                 if payment_request:
                     print(f"✅ Найдена транзакция по извлеченному ID: {payment_request.id}")
         except (ValueError, TypeError, IndexError) as e:
@@ -200,8 +201,8 @@ async def get_transaction_timeline(
         print(f"❌ Транзакция не найдена: {transaction_id}")
         raise HTTPException(status_code=404, detail="Transaction not found")
 
-    print(f"✅ Транзакция найдена: ID={payment_request.id}, Token={payment_request.token}")
-    token_uuid = payment_request.token
+    print(f"✅ Транзакция найдена: ID={payment_request.id}, Token={payment_request.transaction_id}")
+    token_uuid = payment_request.qr_code.qr_token if payment_request.qr_code else None
     qrcode = db.query(QRCode).filter(QRCode.qr_token == token_uuid).first()
 
     # Чтение событий из единой таблицы
@@ -315,8 +316,8 @@ async def get_transaction_timeline(
 
     return {
         "transaction": {
-            "transaction_id": payment_request.payment_reference or f"PAY{payment_request.id:06d}",
-            "payment_token": payment_request.token,
+            "transaction_id": payment_request.transaction_id,
+            "payment_token": token_uuid,
             "amount": payment_request.amount,
             "status": payment_request.status.value if payment_request.status else "pending",
             "bank_code": payment_request.receiver_bank_code,
@@ -359,11 +360,11 @@ async def cancel_transaction(
 ):
     """Отмена транзакции"""
     # Ищем транзакцию по ID или payment_reference (только SIM_платежи)
-    payment = db.query(PaymentRequest).filter(
-        PaymentRequest.token.like('SIM_%'),  # Показываем только SIM_платежи
-        (PaymentRequest.id == transaction_id) | 
-        (PaymentRequest.payment_reference == transaction_id) |
-        (PaymentRequest.token == transaction_id)
+    payment = db.query(UnifiedPayment).filter(
+        UnifiedPayment.transaction_id.like('SIM_%'),  # Показываем только SIM_платежи
+        (UnifiedPayment.id == transaction_id) |
+        (UnifiedPayment.payment_reference == transaction_id) |
+        (UnifiedPayment.qr_code.has(qr_token=transaction_id))
     ).first()
     
     if not payment:

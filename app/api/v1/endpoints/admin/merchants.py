@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.merchant import MerchantResponse, MerchantDetailResponse, MerchantStats, PaymentSummary
-from app.models.merchant import Merchant, MerchantPayment, QRCode, MerchantSettings
+from app.models.merchant import Merchant, QRCode, MerchantSettings
+from app.models.unified import UnifiedPayment
 from app.services.billing_service import BillingService
 from app.core.dependencies import check_rate_limit, get_current_admin_user
 from app.services.hybrid_logging_service import hybrid_logging_service
@@ -53,7 +54,7 @@ async def list_merchants(
         qr_codes_count = db.query(QRCode).filter(QRCode.merchant_id == merchant.id).count()
         
         # Подсчитываем платежи
-        payments_count = db.query(MerchantPayment).filter(MerchantPayment.merchant_id == merchant.id).count()
+        payments_count = db.query(UnifiedPayment).filter(UnifiedPayment.merchant_id == merchant.id).count()
         
         result.append({
             "id": merchant.id,
@@ -99,13 +100,13 @@ async def get_merchant_details(
     qr_codes_count = db.query(QRCode).filter(QRCode.merchant_id == merchant_id).count()
     
     # Подсчитываем платежи
-    payments_count = db.query(MerchantPayment).filter(MerchantPayment.merchant_id == merchant_id).count()
+    payments_count = db.query(UnifiedPayment).filter(UnifiedPayment.merchant_id == merchant_id).count()
     
     # Подсчитываем общую сумму успешных платежей
-    total_amount_result = db.query(func.sum(MerchantPayment.amount)).filter(
+    total_amount_result = db.query(func.sum(UnifiedPayment.amount)).filter(
         and_(
-            MerchantPayment.merchant_id == merchant_id,
-            MerchantPayment.status == 'completed'
+            UnifiedPayment.merchant_id == merchant_id,
+            UnifiedPayment.status == 'completed'
         )
     ).scalar()
     total_amount = float(total_amount_result) if total_amount_result else 0
@@ -376,8 +377,8 @@ async def force_delete_merchant(merchant_id: int, db: Session = Depends(get_db))
         db.query(QRCode).filter(QRCode.merchant_id == merchant_id).delete(synchronize_session=False)
         db.commit()
 
-        # 3) Удаляем связанные MerchantPayment
-        db.query(MerchantPayment).filter(MerchantPayment.merchant_id == merchant_id).delete(synchronize_session=False)
+        # 3) Удаляем связанные UnifiedPayment
+        db.query(UnifiedPayment).filter(UnifiedPayment.merchant_id == merchant_id).delete(synchronize_session=False)
         db.commit()
 
         # 4) Удаляем настройки
@@ -445,12 +446,12 @@ async def get_merchant_payments(
     if not merchant:
         raise HTTPException(status_code=404, detail="Merchant not found")
     
-    query = db.query(MerchantPayment).filter(MerchantPayment.merchant_id == merchant_id)
+    query = db.query(UnifiedPayment).filter(UnifiedPayment.merchant_id == merchant_id)
     
     if status:
-        query = query.filter(MerchantPayment.status == status)
+        query = query.filter(UnifiedPayment.status == status)
     
-    payments = query.order_by(MerchantPayment.processed_at.desc()).offset(skip).limit(limit).all()
+    payments = query.order_by(UnifiedPayment.created_at.desc()).offset(skip).limit(limit).all()
     
     return [
         PaymentSummary(
@@ -591,8 +592,8 @@ async def get_merchants_overview_stats(db: Session = Depends(get_db)):
     new_merchants = db.query(Merchant).filter(Merchant.created_at >= thirty_days_ago).count()
     
     # Общая статистика платежей
-    total_payments = db.query(MerchantPayment).count()
-    successful_payments = db.query(MerchantPayment).filter(MerchantPayment.status == "success").count()
+    total_payments = db.query(UnifiedPayment).count()
+    successful_payments = db.query(UnifiedPayment).filter(UnifiedPayment.status == "completed").count()
     
     # Общая статистика QR-кодов
     total_qr_codes = db.query(QRCode).count()

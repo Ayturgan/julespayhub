@@ -2,8 +2,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.schemas.payment import PaymentRequestCreate, QRResponse
-from app.models.payment import PaymentRequest, TransactionStatus, Bank, TransactionRecord
+from app.schemas.unified_payment import UnifiedPaymentCreate as PaymentRequestCreate, UnifiedPaymentResponse as QRResponse
+from app.models.unified import UnifiedPayment as PaymentRequest
+from app.models.payment import TransactionStatus, Bank, TransactionRecord
 from app.models.merchant import Merchant
 from app.models.admin import Admin
 from app.services.qr_service import QRService
@@ -64,9 +65,11 @@ async def create_payment_request(
         currency=payment_data.currency,
         description=payment_data.description,
         merchant_id=payment_data.merchant_id,
-        sender_bank_code=payment_data.sender_bank_code,
+        receiver_name=payment_data.receiver_name,
+        receiver_account=payment_data.receiver_account,
         receiver_bank_code=payment_data.receiver_bank_code,
-        status=TransactionStatus.PENDING
+        payment_reference=payment_data.payment_reference,
+        status=TransactionStatus.PENDING.value
     )
     
     db.add(payment_request)
@@ -89,13 +92,13 @@ async def get_qr_image(token: str, db: Session = Depends(get_db)):
     Получение изображения QR-кода по токену
     """
     payment_request = db.query(PaymentRequest).filter(
-        PaymentRequest.token == token
+        PaymentRequest.qr_code.has(qr_token=token)
     ).first()
     
     if not payment_request:
         raise HTTPException(status_code=404, detail="Payment request not found")
     
-    qr_url = get_payment_url(token)
+    qr_url = get_payment_url(payment_request.qr_code.qr_token)
     qr_image = QRService.generate_qr_image(qr_url)
     
     return {"qr_image": qr_image}
@@ -116,29 +119,9 @@ async def get_payment_details(
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
     
-    return {
-        "id": payment.id,
-        "amount": payment.amount,
-        "currency": payment.currency,
-        "status": payment.status.value if payment.status else None,
-        "receiver_name": payment.receiver_name,
-        "receiver_account": payment.receiver_account,
-        "receiver_bank_code": payment.receiver_bank_code,
-        "description": payment.description,
-        "created_at": payment.created_at.isoformat() if payment.created_at else None,
-        "paid_at": payment.paid_at.isoformat() if payment.paid_at else None,
-        "transaction_id": payment.transaction_id,
-        "payer_phone": payment.payer_phone,
-        "sender_bank_code": payment.sender_bank_code,
-        "payer_bank_code": payment.payer_bank_code,
-        "sender_account": payment.sender_account,
-        "payment_reference": payment.payment_reference,
-        "expires_at": payment.expires_at.isoformat() if payment.expires_at else None,
-        "is_paid": payment.is_paid,
-        "is_used": payment.is_used
-    }
+    return payment
 
-@router.get("/payments")
+@router.get("/")
 async def list_payments(db: Session = Depends(get_db)):
     """
     Список всех платежных запросов (для админки)
@@ -162,26 +145,7 @@ async def get_recent_payments(
             .limit(limit)\
             .all()
         
-        payments_data = []
-        for payment in payments:
-            payments_data.append({
-                "id": payment.id,
-                "token": payment.token,
-                "amount": payment.amount,
-                "currency": payment.currency,
-                "status": payment.status.value if payment.status else "pending",
-                "sender_bank_code": payment.sender_bank_code,
-                "payer_bank_code": payment.payer_bank_code,
-                "sender_account": payment.sender_account,
-                "receiver_bank_code": payment.receiver_bank_code,
-                "created_at": payment.created_at.isoformat() if payment.created_at else None,
-                "expires_at": payment.expires_at.isoformat() if payment.expires_at else None,
-                "merchant_id": payment.merchant_id,
-                "description": payment.description,
-                "is_paid": payment.is_paid
-            })
-        
-        return payments_data
+        return payments
     except Exception as e:
         # Если есть ошибка, возвращаем тестовые данные для демо
         return [
@@ -220,7 +184,7 @@ async def get_payment_details(token: str, db: Session = Depends(get_db)):
     """
     Детальная информация о платеже
     """
-    payment = db.query(PaymentRequest).filter(PaymentRequest.token == token).first()
+    payment = db.query(PaymentRequest).filter(PaymentRequest.qr_code.has(qr_token=token)).first()
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
     return payment

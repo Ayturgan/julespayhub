@@ -2,7 +2,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.payment import PaymentRequest, TransactionStatus
+from app.models.unified import UnifiedPayment as PaymentRequest
+from app.models.payment import TransactionStatus
 from app.models.settings import SystemSetting
 from app.services.qr_security_service import QRSecurityService
 from app.services.reference_service import PaymentReferenceService
@@ -73,8 +74,8 @@ async def create_secure_qr(
         }
         
         # Создаем платежный запрос через основной сервис
-        from app.schemas.payment import PaymentRequestCreate
-        payment_request = PaymentRequestCreate(**payment_data)
+        from app.schemas.unified_payment import UnifiedPaymentCreate
+        payment_request = UnifiedPaymentCreate(**payment_data)
         
         # Создаем QR с защитой через двухфазный коммит
         from app.services.two_phase_commit_service import two_phase_commit_service
@@ -84,8 +85,11 @@ async def create_secure_qr(
             amount=payment_request.amount,
             currency=payment_request.currency,
             description=payment_request.description,
+            receiver_name=payment_request.receiver_name,
+            receiver_account=payment_request.receiver_account,
             receiver_bank_code=payment_request.receiver_bank_code,
-            status=TransactionStatus.PENDING
+            payment_reference=payment_request.payment_reference,
+            status=TransactionStatus.PENDING.value
         )
         
         db.add(payment_request_obj)

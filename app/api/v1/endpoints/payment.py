@@ -3,8 +3,10 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 import logging
 from app.database import get_db
-from app.models.payment import PaymentRequest, Bank
+from app.models.unified import UnifiedPayment
+from app.models.payment import Bank
 from app.services.hybrid_logging_service import hybrid_logging_service
+from app.schemas.unified_payment import UnifiedPayment as UnifiedPaymentSchema
 from app.schemas.payment import PaymentInfo, PaymentStatusWebhook, PaymentStatusResponse
 from app.schemas.bank import TwoPhasePaymentRequest, TwoPhasePaymentResponse
 from app.core.dependencies import get_authenticated_bank_no_hmac, get_authenticated_bank, get_bank_for_payment_info, get_bank_for_webhook
@@ -118,8 +120,8 @@ async def get_payment_info(
         return ErrorHandlingService.create_error_response(error, request)
     
     # Ищем платежный запрос по UUID
-    payment_request = db.query(PaymentRequest).filter(
-        PaymentRequest.token == token_uuid
+    payment_request = db.query(UnifiedPayment).filter(
+        UnifiedPayment.token == token_uuid
     ).first()
     
     if not payment_request:
@@ -339,12 +341,12 @@ async def get_payment_info(
         # Преобразуем в стандартный формат PaymentInfo, но с возможными изменениями формата
         return PaymentInfo(
             receiver_account=formatted_payment_info.get("receiver_account", payment_request.receiver_account),
-            receiver_bank_code=formatted_payment_info.get("receiver_bank_code", payment_request.receiver_bank_code), 
+            receiver_bank_code=formatted_payment_info.get("receiver_bank_code", payment_request.receiver_bank_code),
             receiver_name=formatted_payment_info.get("receiver_name", payment_request.receiver_name),
             description=formatted_payment_info.get("description", payment_request.description),
             amount=formatted_payment_info.get("amount", payment_request.amount),
             currency=formatted_payment_info.get("currency", payment_request.currency),
-            payment_reference=formatted_payment_info.get("payment_reference", payment_request.payment_reference),
+            payment_reference=payment_request.payment_reference,
             sender_bank_code=payment_request.sender_bank_code,
             sender_account=payment_request.sender_account
         )
@@ -598,8 +600,8 @@ async def initiate_two_phase_payment(
         )
     
     # Ищем платежный запрос
-    payment_request = db.query(PaymentRequest).filter(
-        PaymentRequest.token == token_uuid
+    payment_request = db.query(UnifiedPayment).filter(
+        UnifiedPayment.token == token_uuid
     ).first()
     
     if not payment_request:
@@ -1034,8 +1036,8 @@ async def get_payment_logs(
     ).order_by(TwoPhaseOperation.started_at.asc()).all()
     
     # Получаем информацию о платеже
-    payment_request = db.query(PaymentRequest).filter(
-        PaymentRequest.token == token_uuid
+    payment_request = db.query(UnifiedPayment).filter(
+        UnifiedPayment.token == token_uuid
     ).first()
     
     if not payment_request:

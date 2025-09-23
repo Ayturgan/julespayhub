@@ -2,8 +2,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.payment import Bank, PaymentRequest, PaymentLog, TransactionRecord
-from app.models.merchant import Merchant, MerchantPayment
+from app.models.payment import Bank, PaymentLog, TransactionRecord
+from app.models.merchant import Merchant
+from app.models.unified import UnifiedPayment
 from app.models.admin import Admin
 from sqlalchemy import func, and_, desc
 from datetime import datetime, timedelta, timezone
@@ -111,7 +112,7 @@ async def get_unified_statistics(
 async def _get_dashboard_stats(db: Session, since: datetime) -> Dict[str, Any]:
     """Статистика для дашборда"""
     # Подсчитываем общее количество платежей (за все время)
-    total_payments = db.query(PaymentRequest).count()
+    total_payments = db.query(UnifiedPayment).count()
     
     # Подсчитываем общее количество банков
     total_banks = db.query(Bank).count()
@@ -122,10 +123,10 @@ async def _get_dashboard_stats(db: Session, since: datetime) -> Dict[str, Any]:
     
     # Подсчитываем объем за последние 24 часа
     today_start = datetime.now(timezone.utc) - timedelta(hours=24)
-    today_payments = db.query(PaymentRequest).filter(
+    today_payments = db.query(UnifiedPayment).filter(
         and_(
-            PaymentRequest.created_at >= today_start,
-            PaymentRequest.is_paid == True
+            UnifiedPayment.created_at >= today_start,
+            UnifiedPayment.is_paid == True
         )
     ).all()
     
@@ -147,10 +148,10 @@ async def _get_merchant_quick_stats(db: Session, merchant_id: int, since: dateti
         raise HTTPException(status_code=404, detail="Merchant not found")
     
     # Платежи продавца за период
-    payments = db.query(PaymentRequest).filter(
+    payments = db.query(UnifiedPayment).filter(
         and_(
-            PaymentRequest.merchant_id == merchant_id,
-            PaymentRequest.created_at >= since
+            UnifiedPayment.merchant_id == merchant_id,
+            UnifiedPayment.created_at >= since
         )
     ).all()
     
@@ -178,12 +179,12 @@ async def _get_merchants_overview(db: Session, since: datetime) -> Dict[str, Any
     top_merchants = db.query(
         Merchant.id,
         Merchant.name,
-        func.count(PaymentRequest.id).label('total_payments'),
-        func.sum(PaymentRequest.amount).label('total_amount')
-    ).join(PaymentRequest).filter(
-        PaymentRequest.created_at >= since
+        func.count(UnifiedPayment.id).label('total_payments'),
+        func.sum(UnifiedPayment.amount).label('total_amount')
+    ).join(UnifiedPayment).filter(
+        UnifiedPayment.created_at >= since
     ).group_by(Merchant.id, Merchant.name).order_by(
-        desc(func.sum(PaymentRequest.amount))
+        desc(func.sum(UnifiedPayment.amount))
     ).limit(10).all()
     
     return {
@@ -206,13 +207,13 @@ async def _get_admin_summary(db: Session, since: datetime) -> Dict[str, Any]:
     # Основные метрики
     total_banks = db.query(Bank).count()
     active_banks = db.query(Bank).filter(Bank.is_active == True).count()
-    total_payments = db.query(PaymentRequest).count()
+    total_payments = db.query(UnifiedPayment).count()
     total_merchants = db.query(Merchant).count()
     total_admins = db.query(Admin).count()
     
     # Статистика за период
-    period_payments = db.query(PaymentRequest).filter(
-        PaymentRequest.created_at >= since
+    period_payments = db.query(UnifiedPayment).filter(
+        UnifiedPayment.created_at >= since
     ).count()
     
     period_transactions = db.query(TransactionRecord).filter(
@@ -236,7 +237,7 @@ async def _get_system_stats(db: Session, since: datetime) -> Dict[str, Any]:
     # Общая статистика системы
     total_banks = db.query(Bank).count()
     active_banks = db.query(Bank).filter(Bank.is_active == True).count()
-    total_payments = db.query(PaymentRequest).count()
+    total_payments = db.query(UnifiedPayment).count()
     total_merchants = db.query(Merchant).count()
     total_admins = db.query(Admin).count()
     total_transactions = db.query(TransactionRecord).count()
@@ -245,8 +246,8 @@ async def _get_system_stats(db: Session, since: datetime) -> Dict[str, Any]:
     today = datetime.now().date()
     today_start = datetime.combine(today, datetime.min.time())
     
-    today_payments = db.query(PaymentRequest).filter(
-        PaymentRequest.created_at >= today_start
+    today_payments = db.query(UnifiedPayment).filter(
+        UnifiedPayment.created_at >= today_start
     ).count()
     
     today_transactions = db.query(TransactionRecord).filter(
@@ -272,16 +273,16 @@ async def _get_dashboard_full(db: Session, since: datetime) -> Dict[str, Any]:
     admin_summary = await _get_admin_summary(db, since)
     
     # Дополнительные метрики
-    total_transactions = db.query(MerchantPayment).count()
-    successful_transactions = db.query(MerchantPayment).filter(
-        MerchantPayment.status == 'completed'
+    total_transactions = db.query(UnifiedPayment).count()
+    successful_transactions = db.query(UnifiedPayment).filter(
+        UnifiedPayment.status == 'completed'
     ).count()
     
     success_rate = round((successful_transactions / total_transactions * 100), 1) if total_transactions > 0 else 0
     
     # Средняя сумма успешных платежей
-    avg_amount_result = db.query(func.avg(MerchantPayment.amount)).filter(
-        MerchantPayment.status == 'completed'
+    avg_amount_result = db.query(func.avg(UnifiedPayment.amount)).filter(
+        UnifiedPayment.status == 'completed'
     ).scalar()
     avg_amount = float(avg_amount_result) if avg_amount_result else 0
     
@@ -322,12 +323,12 @@ async def _get_top_merchants(db: Session, since: datetime, limit: int) -> Dict[s
     top_merchants = db.query(
         Merchant.id,
         Merchant.name,
-        func.count(PaymentRequest.id).label('total_payments'),
-        func.sum(PaymentRequest.amount).label('total_amount')
-    ).join(PaymentRequest).filter(
-        PaymentRequest.created_at >= since
+        func.count(UnifiedPayment.id).label('total_payments'),
+        func.sum(UnifiedPayment.amount).label('total_amount')
+    ).join(UnifiedPayment).filter(
+        UnifiedPayment.created_at >= since
     ).group_by(Merchant.id, Merchant.name).order_by(
-        desc(func.sum(PaymentRequest.amount))
+        desc(func.sum(UnifiedPayment.amount))
     ).limit(limit).all()
     
     return {
@@ -346,15 +347,15 @@ async def _get_top_merchants(db: Session, since: datetime, limit: int) -> Dict[s
 
 async def _get_monitoring_summary(db: Session, since: datetime) -> Dict[str, Any]:
     """Сводка мониторинга"""
-    # Requests in specified period - используем PaymentRequest вместо PaymentLog
-    total_requests = db.query(func.count(PaymentRequest.id)).filter(
-        PaymentRequest.created_at >= since
+    # Requests in specified period - используем UnifiedPayment вместо PaymentLog
+    total_requests = db.query(func.count(UnifiedPayment.id)).filter(
+        UnifiedPayment.created_at >= since
     ).scalar() or 0
     
     # Успешные платежи
-    successful_requests = db.query(func.count(PaymentRequest.id)).filter(and_(
-        PaymentRequest.created_at >= since,
-        PaymentRequest.status == "COMPLETED"
+    successful_requests = db.query(func.count(UnifiedPayment.id)).filter(and_(
+        UnifiedPayment.created_at >= since,
+        UnifiedPayment.status == "COMPLETED"
     )).scalar() or 0
     
     # Ошибки (платежи со статусом не COMPLETED)
@@ -482,10 +483,10 @@ async def _get_bank_stats(db: Session, since: datetime, bank_code: Optional[str]
         )
     ).count()
     
-    today_volume = db.query(func.sum(PaymentRequest.amount)).filter(
+    today_volume = db.query(func.sum(UnifiedPayment.amount)).filter(
         and_(
-            PaymentRequest.created_at >= today_start,
-            PaymentRequest.is_paid == True
+            UnifiedPayment.created_at >= today_start,
+            UnifiedPayment.is_paid == True
         )
     ).scalar() or 0
 
@@ -512,11 +513,11 @@ async def _get_turnover_7days(db: Session, since: datetime) -> Dict[str, Any]:
         date_end = date.replace(hour=23, minute=59, second=59, microsecond=999999)
         
         # Сумма успешных платежей за день
-        daily_amount = db.query(func.sum(PaymentRequest.amount)).filter(
+        daily_amount = db.query(func.sum(UnifiedPayment.amount)).filter(
             and_(
-                PaymentRequest.created_at >= date_start,
-                PaymentRequest.created_at <= date_end,
-                PaymentRequest.is_paid == True
+                UnifiedPayment.created_at >= date_start,
+                UnifiedPayment.created_at <= date_end,
+                UnifiedPayment.is_paid == True
             )
         ).scalar() or 0
         
@@ -537,11 +538,11 @@ async def _get_status_distribution(db: Session, since: datetime) -> Dict[str, An
     """Соотношение статусов транзакций за 24 часа"""
     # Статусы транзакций за последние 24 часа
     status_counts = db.query(
-        PaymentRequest.status,
-        func.count(PaymentRequest.id)
+        UnifiedPayment.status,
+        func.count(UnifiedPayment.id)
     ).filter(
-        PaymentRequest.created_at >= since
-    ).group_by(PaymentRequest.status).all()
+        UnifiedPayment.created_at >= since
+    ).group_by(UnifiedPayment.status).all()
     
     # Преобразуем в нужный формат
     status_data = []
@@ -578,15 +579,15 @@ async def _get_transaction_lifetime_series(db: Session, since: datetime) -> Dict
         
         # Выбираем транзакции, завершенные в этом часе
         transactions = db.query(
-            PaymentRequest.created_at,
-            PaymentRequest.paid_at
+            UnifiedPayment.created_at,
+            UnifiedPayment.paid_at
         ).filter(
             and_(
-                PaymentRequest.paid_at >= hour_start,
-                PaymentRequest.paid_at < hour_end,
-                PaymentRequest.is_paid == True,
-                PaymentRequest.paid_at.isnot(None),
-                PaymentRequest.created_at.isnot(None)
+                UnifiedPayment.paid_at >= hour_start,
+                UnifiedPayment.paid_at < hour_end,
+                UnifiedPayment.is_paid == True,
+                UnifiedPayment.paid_at.isnot(None),
+                UnifiedPayment.created_at.isnot(None)
             )
         ).all()
         
@@ -626,11 +627,11 @@ async def _get_average_check(db: Session, since: datetime) -> Dict[str, Any]:
         date_end = date.replace(hour=23, minute=59, second=59, microsecond=999999)
         
         # Средний чек за день
-        avg_amount = db.query(func.avg(PaymentRequest.amount)).filter(
+        avg_amount = db.query(func.avg(UnifiedPayment.amount)).filter(
             and_(
-                PaymentRequest.created_at >= date_start,
-                PaymentRequest.created_at <= date_end,
-                PaymentRequest.is_paid == True
+                UnifiedPayment.created_at >= date_start,
+                UnifiedPayment.created_at <= date_end,
+                UnifiedPayment.is_paid == True
             )
         ).scalar() or 0
         

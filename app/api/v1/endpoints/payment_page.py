@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from app.database import get_db
-from app.models.payment import PaymentRequest, Bank
+from app.models.unified import UnifiedPayment
+from app.models.payment import Bank
 from app.services.token_service import SecureTokenService
 from app.services.error_handling_service import ErrorHandlingService, ErrorCode
 
@@ -27,8 +28,8 @@ async def payment_page(
         return create_error_page("Неверный формат токена", "Пожалуйста, проверьте правильность QR-кода")
     
     # Ищем платежный запрос
-    payment_request = db.query(PaymentRequest).filter(
-        PaymentRequest.token == token_uuid
+    payment_request = db.query(UnifiedPayment).filter(
+        UnifiedPayment.token == token_uuid
     ).first()
     
     if not payment_request:
@@ -75,7 +76,7 @@ async def payment_page(
     return create_payment_page(payment_request, token)
 
 
-def create_payment_page(payment_request: PaymentRequest, token: str) -> str:
+def create_payment_page(payment_request: UnifiedPayment, token: str) -> str:
     """Простой MVP HTML без лишнего оформления."""
 
     amount_display = f"{payment_request.amount} {payment_request.currency}" if payment_request.amount else "Сумма укажется в приложении банка"

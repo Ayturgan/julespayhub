@@ -5,7 +5,8 @@ from app.database import get_db
 # PaymentLog больше не используется для API логирования
 from app.services.hybrid_logging_service import hybrid_logging_service
 
-from app.models.merchant import Merchant, MerchantPayment
+from app.models.merchant import Merchant
+from app.models.unified import UnifiedPayment
 from app.models.admin import Admin
 from sqlalchemy import func, and_, desc
 from datetime import datetime, timedelta, timezone
@@ -291,19 +292,19 @@ async def get_top_merchants(
     top_merchants = db.query(
         Merchant.id,
         Merchant.name,
-        func.sum(MerchantPayment.amount).label('total_revenue'),
-        func.count(MerchantPayment.id).label('payments_count')
+        func.sum(UnifiedPayment.amount).label('total_revenue'),
+        func.count(UnifiedPayment.id).label('payments_count')
     ).join(
-        MerchantPayment, MerchantPayment.merchant_id == Merchant.id
+        UnifiedPayment, UnifiedPayment.merchant_id == Merchant.id
     ).filter(
         and_(
-            MerchantPayment.status == 'completed',
-            MerchantPayment.created_at >= start_date
+            UnifiedPayment.status == 'completed',
+            UnifiedPayment.created_at >= start_date
         )
     ).group_by(
         Merchant.id, Merchant.name
     ).order_by(
-        func.sum(MerchantPayment.amount).desc()
+        func.sum(UnifiedPayment.amount).desc()
     ).limit(10).all()
     
     return [

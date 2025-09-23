@@ -4,8 +4,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.admin import Admin
 from app.models.admin import AdminQRCode
-from app.models.payment import PaymentRequest, TransactionStatus
-from app.schemas.payment import PaymentRequestCreate
 from app.services.hybrid_logging_service import hybrid_logging_service
 from app.services.two_phase_commit_service import two_phase_commit_service
 from app.core.dependencies import get_current_admin_user

@@ -13,17 +13,19 @@ import logging
 
 from app.database import get_db
 from app.models.merchant import (
-    Merchant, QRCode, MerchantPayment, MerchantSettings, TradingPoint
+    Merchant, QRCode, MerchantSettings, TradingPoint
 )
+from app.models.unified import UnifiedPayment
 from app.models.payment import Bank
 
 
 from app.schemas.merchant import (
     MerchantRegister, MerchantLogin, MerchantResponse, MerchantLoginResponse,
     QRCodeCreate, QRCodeResponse,
-    MerchantPaymentResponse, MerchantSettingsUpdate, MerchantSettingsResponse,
+    MerchantSettingsUpdate, MerchantSettingsResponse,
     MerchantStats, PaymentSummary, MerchantProfileUpdate
 )
+from app.schemas.unified_payment import UnifiedPaymentResponse as MerchantPaymentResponse
 from app.core.merchant_dependencies import (
     get_current_merchant, get_verified_merchant,
     get_merchant_for_payments, get_merchant_for_reports, get_merchant_for_settings
@@ -292,21 +294,21 @@ async def get_qr_code_stats(
     if not qr:
         raise HTTPException(status_code=404, detail="QR code not found")
     
-    count = db.query(func.count(MerchantPayment.id)).filter(
+    count = db.query(func.count(UnifiedPayment.id)).filter(
         and_(
-            MerchantPayment.merchant_id == current_merchant.id,
-            MerchantPayment.qr_code_id == qr_code_id,
-            MerchantPayment.status == 'completed',
-            MerchantPayment.created_at >= since,
+            UnifiedPayment.merchant_id == current_merchant.id,
+            UnifiedPayment.qr_code_id == qr_code_id,
+            UnifiedPayment.status == 'completed',
+            UnifiedPayment.created_at >= since,
         )
     ).scalar() or 0
     
-    total = db.query(func.sum(MerchantPayment.amount)).filter(
+    total = db.query(func.sum(UnifiedPayment.amount)).filter(
         and_(
-            MerchantPayment.merchant_id == current_merchant.id,
-            MerchantPayment.qr_code_id == qr_code_id,
-            MerchantPayment.status == 'completed',
-            MerchantPayment.created_at >= since,
+            UnifiedPayment.merchant_id == current_merchant.id,
+            UnifiedPayment.qr_code_id == qr_code_id,
+            UnifiedPayment.status == 'completed',
+            UnifiedPayment.created_at >= since,
         )
     ).scalar() or 0
     
@@ -467,9 +469,9 @@ async def get_payment(
     db: Session = Depends(get_db)
 ):
     """Получение конкретного платежа"""
-    payment = db.query(MerchantPayment).filter(
-        MerchantPayment.id == payment_id,
-        MerchantPayment.merchant_id == current_merchant.id
+    payment = db.query(UnifiedPayment).filter(
+        UnifiedPayment.id == payment_id,
+        UnifiedPayment.merchant_id == current_merchant.id
     ).first()
     
     if not payment:
@@ -493,9 +495,9 @@ async def cancel_payment(
     db: Session = Depends(get_db)
 ):
     """Отмена платежа"""
-    payment = db.query(MerchantPayment).filter(
-        MerchantPayment.id == payment_id,
-        MerchantPayment.merchant_id == current_merchant.id
+    payment = db.query(UnifiedPayment).filter(
+        UnifiedPayment.id == payment_id,
+        UnifiedPayment.merchant_id == current_merchant.id
     ).first()
     
     if not payment:
@@ -674,17 +676,17 @@ async def get_merchant_statistics(
     today = datetime.now(timezone.utc).date()
     yesterday = today - timedelta(days=1)
     
-    today_amount_result = db.query(func.sum(MerchantPayment.amount)).filter(
-        MerchantPayment.merchant_id == current_merchant.id,
-        func.date(MerchantPayment.paid_at) == today,
-        MerchantPayment.status == "completed"
+    today_amount_result = db.query(func.sum(UnifiedPayment.amount)).filter(
+        UnifiedPayment.merchant_id == current_merchant.id,
+        func.date(UnifiedPayment.paid_at) == today,
+        UnifiedPayment.status == "completed"
     ).scalar()
     today_amount = float(today_amount_result) if today_amount_result else 0.0
     
-    yesterday_amount_result = db.query(func.sum(MerchantPayment.amount)).filter(
-        MerchantPayment.merchant_id == current_merchant.id,
-        func.date(MerchantPayment.paid_at) == yesterday,
-        MerchantPayment.status == "completed"
+    yesterday_amount_result = db.query(func.sum(UnifiedPayment.amount)).filter(
+        UnifiedPayment.merchant_id == current_merchant.id,
+        func.date(UnifiedPayment.paid_at) == yesterday,
+        UnifiedPayment.status == "completed"
     ).scalar()
     yesterday_amount = float(yesterday_amount_result) if yesterday_amount_result else 0.0
     
@@ -746,17 +748,17 @@ async def get_merchant_stats(
     today = datetime.now(timezone.utc).date()
     yesterday = today - timedelta(days=1)
     
-    today_amount_result = db.query(func.sum(MerchantPayment.amount)).filter(
-        MerchantPayment.merchant_id == current_merchant.id,
-        func.date(MerchantPayment.created_at) == today,
-        MerchantPayment.status == "completed"
+    today_amount_result = db.query(func.sum(UnifiedPayment.amount)).filter(
+        UnifiedPayment.merchant_id == current_merchant.id,
+        func.date(UnifiedPayment.created_at) == today,
+        UnifiedPayment.status == "completed"
     ).scalar()
     today_amount = float(today_amount_result) if today_amount_result else 0.0
     
-    yesterday_amount_result = db.query(func.sum(MerchantPayment.amount)).filter(
-        MerchantPayment.merchant_id == current_merchant.id,
-        func.date(MerchantPayment.created_at) == yesterday,
-        MerchantPayment.status == "completed"
+    yesterday_amount_result = db.query(func.sum(UnifiedPayment.amount)).filter(
+        UnifiedPayment.merchant_id == current_merchant.id,
+        func.date(UnifiedPayment.created_at) == yesterday,
+        UnifiedPayment.status == "completed"
     ).scalar()
     yesterday_amount = float(yesterday_amount_result) if yesterday_amount_result else 0.0
     

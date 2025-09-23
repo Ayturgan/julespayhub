@@ -4,10 +4,8 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.admin import Admin
 from app.schemas.admin import AdminFullResponse, AdminProfileUpdate, AdminQRCodeCreate
-from app.schemas.payment import PaymentRequestCreate, QRResponse
 # from app.services.logging_service import AuditLoggingService  # Больше не используется
 from app.services.two_phase_commit_service import two_phase_commit_service
-from app.models.payment import PaymentRequest, TransactionStatus    
 from app.core.dependencies import get_current_admin_user
 
 from datetime import datetime, timedelta, timezone

@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.payment import Bank, PaymentRequest
-from app.models.merchant import Merchant, MerchantPayment
+from app.models.payment import Bank
+from app.models.merchant import Merchant
+from app.models.unified import UnifiedPayment
 from app.models.admin import Admin
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
@@ -18,15 +19,15 @@ async def get_dashboard_stats(db: Session = Depends(get_db)) -> Dict[str, Any]:
     
     # Подсчитываем платежи за сегодня
     today = datetime.now(timezone.utc).date()
-    today_payments = db.query(PaymentRequest).filter(
-        PaymentRequest.created_at >= today
+    today_payments = db.query(UnifiedPayment).filter(
+        UnifiedPayment.created_at >= today
     ).count()
     
     # Подсчитываем общую сумму платежей за сегодня
-    today_amount = db.query(PaymentRequest).filter(
-        PaymentRequest.created_at >= today,
-        PaymentRequest.is_paid == True
-    ).with_entities(PaymentRequest.amount).all()
+    today_amount = db.query(UnifiedPayment).filter(
+        UnifiedPayment.created_at >= today,
+        UnifiedPayment.is_paid == True
+    ).with_entities(UnifiedPayment.amount).all()
     total_amount = sum(payment.amount for payment in today_amount if payment.amount) if today_amount else 0
     
     # Подсчитываем активных продавцов
@@ -34,22 +35,22 @@ async def get_dashboard_stats(db: Session = Depends(get_db)) -> Dict[str, Any]:
     
     # Подсчитываем успешные платежи за последние 24 часа
     last_24h = datetime.now(timezone.utc) - timedelta(hours=24)
-    successful_payments = db.query(PaymentRequest).filter(
-        PaymentRequest.created_at >= last_24h,
-        PaymentRequest.is_paid == True
+    successful_payments = db.query(UnifiedPayment).filter(
+        UnifiedPayment.created_at >= last_24h,
+        UnifiedPayment.is_paid == True
     ).count()
     
     # Подсчитываем общее количество платежей за последние 24 часа
-    total_payments_24h = db.query(PaymentRequest).filter(
-        PaymentRequest.created_at >= last_24h
+    total_payments_24h = db.query(UnifiedPayment).filter(
+        UnifiedPayment.created_at >= last_24h
     ).count()
     
     # Вычисляем процент успешных платежей
     success_rate = (successful_payments / total_payments_24h * 100) if total_payments_24h > 0 else 0
     
     # Получаем последние платежи
-    recent_payments = db.query(PaymentRequest).order_by(
-        PaymentRequest.created_at.desc()
+    recent_payments = db.query(UnifiedPayment).order_by(
+        UnifiedPayment.created_at.desc()
     ).limit(5).all()
     
     recent_payments_data = []
