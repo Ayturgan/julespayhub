@@ -2,8 +2,9 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
-from app.models.payment import BillingRecord, PaymentRequest, TransactionRecord
-from app.models.merchant import Merchant, MerchantPayment, QRCode
+from app.models.payment import BillingRecord, TransactionRecord
+from app.models.merchant import Merchant
+from app.models.unified import UnifiedPayment, UnifiedQRCode
 from app.models.refund import RefundRequest, RefundOperation, RefundStatus, RefundType
 from app.schemas.payment import PaymentStatusWebhook
 from app.schemas.merchant import MerchantStats, PaymentSummary
@@ -18,10 +19,11 @@ class BillingService:
     @staticmethod
     def create_billing_record(
         db: Session,
-        payment_request: PaymentRequest,
+        payment_request: "UnifiedPayment",
         transaction_record: TransactionRecord,
         webhook_data: PaymentStatusWebhook,
         payer_bank_code: str,
+        token_uuid: str,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None
     ) -> BillingRecord:
@@ -30,10 +32,11 @@ class BillingService:
         
         Args:
             db: Сессия базы данных
-            payment_request: Запрос на платеж
+            payment_request: Запрос на платеж (UnifiedPayment)
             transaction_record: Запись о транзакции
             webhook_data: Данные webhook от банка
             payer_bank_code: Код банка плательщика
+            token_uuid: UUID токена
             ip_address: IP адрес при создании платежа
             user_agent: User-Agent при создании платежа
             
@@ -52,7 +55,7 @@ class BillingService:
         
         # Создаем биллинговую запись
         billing_record = BillingRecord(
-            payment_token=payment_request.token,
+            payment_token=token_uuid,
             transaction_id=webhook_data.transaction_id,
             amount=webhook_data.amount,
             currency=payment_request.currency,
@@ -430,20 +433,20 @@ class BillingService:
         start_date = datetime.now() - timedelta(days=days)
         
         results = db.query(
-            func.date(MerchantPayment.processed_at).label('date'),
-            func.count(MerchantPayment.id).label('payment_count'),
-            func.sum(MerchantPayment.amount).label('total_amount'),
-            func.avg(MerchantPayment.amount).label('avg_amount')
+            func.date(UnifiedPayment.created_at).label('date'),
+            func.count(UnifiedPayment.id).label('payment_count'),
+            func.sum(UnifiedPayment.amount).label('total_amount'),
+            func.avg(UnifiedPayment.amount).label('avg_amount')
         ).filter(
             and_(
-                MerchantPayment.merchant_id == merchant.id,
-                MerchantPayment.processed_at >= start_date,
-                MerchantPayment.status == "success"
+                UnifiedPayment.merchant_id == merchant.id,
+                UnifiedPayment.created_at >= start_date,
+                UnifiedPayment.status == "completed"
             )
         ).group_by(
-            func.date(MerchantPayment.processed_at)
+            func.date(UnifiedPayment.created_at)
         ).order_by(
-            func.date(MerchantPayment.processed_at).desc()
+            func.date(UnifiedPayment.created_at).desc()
         ).all()
         
         return [
@@ -476,10 +479,10 @@ class BillingService:
             List[PaymentSummary]: Сводка платежей
         """
         
-        payments = db.query(MerchantPayment).filter(
-            MerchantPayment.merchant_id == merchant.id
+        payments = db.query(UnifiedPayment).filter(
+            UnifiedPayment.merchant_id == merchant.id
         ).order_by(
-            MerchantPayment.processed_at.desc()
+            UnifiedPayment.created_at.desc()
         ).offset(skip).limit(limit).all()
         
         return [
@@ -487,12 +490,12 @@ class BillingService:
                 id=payment.id,
                 amount=payment.amount,
                 currency=payment.currency,
-                status=payment.status,
+                status=payment.status.value,
                 payer_phone=payment.payer_phone,
                 payer_name=payment.payer_name,
                 transaction_id=payment.transaction_id,
-                bank_code=payment.bank_code,
-                processed_at=payment.processed_at,
+                bank_code=payment.payer_bank_code,
+                processed_at=payment.created_at,
                 qr_code_id=payment.qr_code_id
             )
             for payment in payments
@@ -514,8 +517,8 @@ class BillingService:
             Dict[str, Any]: Статистика QR-кодов
         """
         
-        qr_codes = db.query(QRCode).filter(
-            QRCode.merchant_id == merchant.id
+        qr_codes = db.query(UnifiedQRCode).filter(
+            UnifiedQRCode.merchant_id == merchant.id
         ).all()
         
         total_qr_codes = len(qr_codes)
@@ -557,13 +560,13 @@ class BillingService:
         """
         
         if export_type == "payments":
-            records = db.query(MerchantPayment).filter(
+            records = db.query(UnifiedPayment).filter(
                 and_(
-                    MerchantPayment.merchant_id == merchant.id,
-                    MerchantPayment.processed_at >= start_date,
-                    MerchantPayment.processed_at <= end_date
+                    UnifiedPayment.merchant_id == merchant.id,
+                    UnifiedPayment.created_at >= start_date,
+                    UnifiedPayment.created_at <= end_date
                 )
-            ).order_by(MerchantPayment.processed_at.desc()).all()
+            ).order_by(UnifiedPayment.created_at.desc()).all()
             
             export_data = []
             for record in records:
@@ -571,25 +574,25 @@ class BillingService:
                     "payment_id": record.id,
                     "amount": record.amount,
                     "currency": record.currency,
-                    "status": record.status,
+                    "status": record.status.value,
                     "payer_phone": record.payer_phone,
                     "payer_name": record.payer_name,
                     "transaction_id": record.transaction_id,
-                    "bank_code": record.bank_code,
-                    "processed_at": record.processed_at.isoformat(),
+                    "bank_code": record.payer_bank_code,
+                    "processed_at": record.created_at.isoformat(),
                     "qr_code_id": record.qr_code_id
                 })
             
             return export_data
             
         elif export_type == "qr_codes":
-            records = db.query(QRCode).filter(
+            records = db.query(UnifiedQRCode).filter(
                 and_(
-                    QRCode.merchant_id == merchant.id,
-                    QRCode.created_at >= start_date,
-                    QRCode.created_at <= end_date
+                    UnifiedQRCode.merchant_id == merchant.id,
+                    UnifiedQRCode.created_at >= start_date,
+                    UnifiedQRCode.created_at <= end_date
                 )
-            ).order_by(QRCode.created_at.desc()).all()
+            ).order_by(UnifiedQRCode.created_at.desc()).all()
             
             export_data = []
             for record in records:

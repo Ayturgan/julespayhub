@@ -13,7 +13,8 @@ import json
 from contextlib import asynccontextmanager
 
 from app.database import get_db
-from app.models.payment import PaymentRequest, TransactionStatus, TwoPhaseOperation
+from app.models.unified import UnifiedPayment
+from app.models.payment import TransactionStatus, TwoPhaseOperation
 from app.services.two_phase_commit_service import two_phase_commit_service
 from app.services.timeline_service import TimelineService
 
@@ -94,13 +95,13 @@ class TwoPhaseRecoveryService:
         
         cutoff_time = datetime.now() - timedelta(seconds=self.prepare_timeout)
         
-        stale_transactions = db.query(PaymentRequest).filter(
+        stale_transactions = db.query(UnifiedPayment).filter(
             and_(
-                PaymentRequest.status == TransactionStatus.PREPARED,
-                PaymentRequest.prepare_completed_at < cutoff_time,
+                UnifiedPayment.status == TransactionStatus.PREPARED,
+                UnifiedPayment.prepare_completed_at < cutoff_time,
                 or_(
-                    PaymentRequest.commit_started_at.is_(None),
-                    PaymentRequest.commit_started_at < cutoff_time
+                    UnifiedPayment.commit_started_at.is_(None),
+                    UnifiedPayment.commit_started_at < cutoff_time
                 )
             )
         ).all()
@@ -109,7 +110,7 @@ class TwoPhaseRecoveryService:
             logger.warning(f"🚨 Найдена зависшая PREPARED транзакция: {transaction.transaction_id}")
             
             # Проверяем количество попыток восстановления
-            recovery_attempts = await self._get_recovery_attempts(db, transaction.token)
+            recovery_attempts = await self._get_recovery_attempts(db, transaction.payment_reference)
             
             if recovery_attempts >= self.max_recovery_attempts:
                 logger.error(f"💀 Превышено максимальное количество попыток восстановления для {transaction.transaction_id}")
@@ -151,7 +152,7 @@ class TwoPhaseRecoveryService:
                 # Записываем событие восстановления
                 TimelineService.record_event(
                     db,
-                    payment_token=transaction.token,
+                    payment_token=transaction.payment_reference,
                     event_type='recovery_abort',
                     title='Автоматическая отмена зависшей транзакции',
                     description=f'PREPARED -> ABORTED после таймаута {self.prepare_timeout}с',
@@ -171,13 +172,13 @@ class TwoPhaseRecoveryService:
         
         cutoff_time = datetime.now() - timedelta(seconds=self.commit_timeout)
         
-        stale_transactions = db.query(PaymentRequest).filter(
+        stale_transactions = db.query(UnifiedPayment).filter(
             and_(
-                PaymentRequest.status == TransactionStatus.COMMITTING,
-                PaymentRequest.commit_started_at < cutoff_time,
+                UnifiedPayment.status == TransactionStatus.COMMITTING,
+                UnifiedPayment.commit_started_at < cutoff_time,
                 or_(
-                    PaymentRequest.commit_completed_at.is_(None),
-                    PaymentRequest.commit_completed_at < cutoff_time
+                    UnifiedPayment.commit_completed_at.is_(None),
+                    UnifiedPayment.commit_completed_at < cutoff_time
                 )
             )
         ).all()
@@ -185,7 +186,7 @@ class TwoPhaseRecoveryService:
         for transaction in stale_transactions:
             logger.warning(f"🚨 Найдена зависшая COMMITTING транзакция: {transaction.transaction_id}")
             
-            recovery_attempts = await self._get_recovery_attempts(db, transaction.token)
+            recovery_attempts = await self._get_recovery_attempts(db, transaction.payment_reference)
             
             if recovery_attempts >= self.max_recovery_attempts:
                 logger.error(f"💀 Превышено максимальное количество попыток восстановления для {transaction.transaction_id}")
@@ -230,18 +231,18 @@ class TwoPhaseRecoveryService:
                     transaction.commit_completed_at = datetime.now()
                     transaction.is_paid = True
                     transaction.paid_at = datetime.now()
-                    
+
                     # Находим сумму из результатов
                     for result in commit_result["results"]:
                         if result.bank_role.value == "sender" and result.response_data:
-                            transaction.paid_amount = result.response_data.get("actual_amount", transaction.amount)
+                            transaction.amount = result.response_data.get("actual_amount", transaction.amount)
                             break
                     
                     db.commit()
                     
                     TimelineService.record_event(
                         db,
-                        payment_token=transaction.token,
+                        payment_token=transaction.payment_reference,
                         event_type='recovery_commit_success',
                         title='Успешное восстановление commit транзакции',
                         description=f'COMMITTING -> COMPLETED после повторной попытки',
@@ -257,7 +258,7 @@ class TwoPhaseRecoveryService:
                     
                     TimelineService.record_event(
                         db,
-                        payment_token=transaction.token,
+                        payment_token=transaction.payment_reference,
                         event_type='recovery_commit_failed',
                         title='Неудачная попытка восстановления commit',
                         description=f'Требуется ручное вмешательство: {commit_result["error"]}',
@@ -266,24 +267,24 @@ class TwoPhaseRecoveryService:
                         status='error'
                     )
                 
-                await self._increment_recovery_attempts(db, transaction.token)
+                await self._increment_recovery_attempts(db, transaction.payment_reference)
                 
             except Exception as e:
                 logger.error(f"💥 Ошибка при повторном commit транзакции {transaction.transaction_id}: {e}")
-                await self._increment_recovery_attempts(db, transaction.token)
+                await self._increment_recovery_attempts(db, transaction.payment_reference)
     
     async def _handle_stale_aborting_transactions(self, db: Session):
         """Обработка транзакций, зависших в состоянии ABORTING"""
         
         cutoff_time = datetime.now() - timedelta(seconds=self.abort_timeout)
         
-        stale_transactions = db.query(PaymentRequest).filter(
+        stale_transactions = db.query(UnifiedPayment).filter(
             and_(
-                PaymentRequest.status == TransactionStatus.ABORTING,
-                PaymentRequest.abort_started_at < cutoff_time,
+                UnifiedPayment.status == TransactionStatus.ABORTING,
+                UnifiedPayment.abort_started_at < cutoff_time,
                 or_(
-                    PaymentRequest.abort_completed_at.is_(None),
-                    PaymentRequest.abort_completed_at < cutoff_time
+                    UnifiedPayment.abort_completed_at.is_(None),
+                    UnifiedPayment.abort_completed_at < cutoff_time
                 )
             )
         ).all()
@@ -291,7 +292,7 @@ class TwoPhaseRecoveryService:
         for transaction in stale_transactions:
             logger.warning(f"🚨 Найдена зависшая ABORTING транзакция: {transaction.transaction_id}")
             
-            recovery_attempts = await self._get_recovery_attempts(db, transaction.token)
+            recovery_attempts = await self._get_recovery_attempts(db, transaction.payment_reference)
             
             if recovery_attempts >= self.max_recovery_attempts:
                 # Принудительно завершаем отмену
@@ -336,7 +337,7 @@ class TwoPhaseRecoveryService:
                 
                 TimelineService.record_event(
                     db,
-                    payment_token=transaction.token,
+                    payment_token=transaction.payment_reference,
                     event_type='recovery_abort_completed',
                     title='Успешно завершена отмена транзакции',
                     description=f'ABORTING -> ABORTED после повторной попытки',
@@ -347,21 +348,21 @@ class TwoPhaseRecoveryService:
                 
                 logger.info(f"✅ Успешно завершена отмена транзакции: {transaction.transaction_id}")
                 
-                await self._increment_recovery_attempts(db, transaction.token)
+                await self._increment_recovery_attempts(db, transaction.payment_reference)
                 
             except Exception as e:
                 logger.error(f"💥 Ошибка при повторной отмене транзакции {transaction.transaction_id}: {e}")
-                await self._increment_recovery_attempts(db, transaction.token)
+                await self._increment_recovery_attempts(db, transaction.payment_reference)
     
     async def _handle_stale_preparing_transactions(self, db: Session):
         """Обработка транзакций, слишком долго находящихся в состоянии PREPARING"""
         
         cutoff_time = datetime.now() - timedelta(seconds=self.prepare_timeout * 2)  # Двойной таймаут для PREPARING
         
-        stale_transactions = db.query(PaymentRequest).filter(
+        stale_transactions = db.query(UnifiedPayment).filter(
             and_(
-                PaymentRequest.status == TransactionStatus.PREPARING,
-                PaymentRequest.prepare_started_at < cutoff_time
+                UnifiedPayment.status == TransactionStatus.PREPARING,
+                UnifiedPayment.prepare_started_at < cutoff_time
             )
         ).all()
         
@@ -376,7 +377,7 @@ class TwoPhaseRecoveryService:
             
             TimelineService.record_event(
                 db,
-                payment_token=transaction.token,
+                payment_token=transaction.payment_reference,
                 event_type='recovery_force_abort',
                 title='Принудительная отмена зависшей подготовки',
                 description=f'PREPARING -> ABORTED после таймаута {self.prepare_timeout * 2}с',
@@ -392,15 +393,15 @@ class TwoPhaseRecoveryService:
         
         cutoff_time = datetime.now() - timedelta(hours=24)  # 24 часа без изменений
         
-        dead_transactions = db.query(PaymentRequest).filter(
+        dead_transactions = db.query(UnifiedPayment).filter(
             and_(
-                PaymentRequest.status.in_([
+                UnifiedPayment.status.in_([
                     TransactionStatus.PREPARING,
                     TransactionStatus.PREPARED,
                     TransactionStatus.COMMITTING,
                     TransactionStatus.ABORTING
                 ]),
-                PaymentRequest.created_at < cutoff_time
+                UnifiedPayment.created_at < cutoff_time
             )
         ).all()
         
@@ -441,7 +442,7 @@ class TwoPhaseRecoveryService:
         db.add(recovery_log)
         db.commit()
     
-    async def _mark_transaction_for_manual_intervention(self, db: Session, transaction: PaymentRequest):
+    async def _mark_transaction_for_manual_intervention(self, db: Session, transaction: UnifiedPayment):
         """Помечаем транзакцию для ручного вмешательства"""
         
         # Обновляем метаданные
@@ -460,7 +461,7 @@ class TwoPhaseRecoveryService:
         
         TimelineService.record_event(
             db,
-            payment_token=transaction.token,
+            payment_token=transaction.payment_reference,
             event_type='manual_intervention_required',
             title='Требуется ручное вмешательство',
             description=f'Транзакция {transaction.transaction_id} помечена для ручного разбора',

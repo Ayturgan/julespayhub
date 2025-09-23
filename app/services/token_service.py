@@ -5,6 +5,8 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
 from app.core.config import settings
+from app.models.unified import UnifiedPayment
+from app.schemas.unified_payment import PaymentStatus
 
 class SecureTokenService:
     """Сервис для создания и проверки защищенных токенов"""
@@ -53,13 +55,13 @@ class SecureTokenService:
         return f"{token_uuid}.{signature}"
     
     @staticmethod
-    def verify_token_signature(token: str, payment_request) -> bool:
+    def verify_token_signature(token: str, payment_request: "UnifiedPayment") -> bool:
         """
         Проверка подписи токена
         
         Args:
             token: Токен для проверки
-            payment_request: Объект PaymentRequest из БД
+            payment_request: Объект UnifiedPayment из БД
             
         Returns:
             bool: True если подпись корректна
@@ -153,13 +155,13 @@ class SecureTokenService:
         return signature
     
     @staticmethod
-    def is_token_expired(token: str, payment_request) -> bool:
+    def is_token_expired(token: str, payment_request: "UnifiedPayment") -> bool:
         """
         Проверка истечения срока действия токена
         
         Args:
             token: Токен для проверки
-            payment_request: Объект PaymentRequest из БД
+            payment_request: Объект UnifiedPayment из БД
             
         Returns:
             bool: True если токен истек
@@ -172,13 +174,13 @@ class SecureTokenService:
         return now_utc > expires_at
     
     @staticmethod
-    def validate_token(token: str, payment_request) -> Dict[str, Any]:
+    def validate_token(token: str, payment_request: "UnifiedPayment") -> Dict[str, Any]:
         """
         Полная валидация токена
         
         Args:
             token: Токен для проверки
-            payment_request: Объект PaymentRequest из БД
+            payment_request: Объект UnifiedPayment из БД
             
         Returns:
             dict: Результат валидации
@@ -198,7 +200,7 @@ class SecureTokenService:
         #     return result
         
         # Проверяем использование
-        if payment_request.is_used:
+        if payment_request.status == PaymentStatus.COMPLETED:
             result["used"] = True
             result["error"] = "Token already used"
             return result

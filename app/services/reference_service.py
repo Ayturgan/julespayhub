@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from app.models.payment import PaymentRequest
+from app.models.unified import UnifiedPayment
 import logging
 
 logger = logging.getLogger(__name__)
@@ -52,8 +52,8 @@ class PaymentReferenceService:
         """
         
         # Ищем все payment_reference за сегодня
-        today_references = db.query(PaymentRequest.payment_reference).filter(
-            PaymentRequest.payment_reference.like(f"%{date_str}")
+        today_references = db.query(UnifiedPayment.payment_reference).filter(
+            UnifiedPayment.payment_reference.like(f"%{date_str}")
         ).all()
         
         if not today_references:
@@ -159,8 +159,8 @@ class PaymentReferenceService:
         start_date = datetime.now() - timedelta(days=days)
         
         # Получаем все референсы за период
-        references = db.query(PaymentRequest.payment_reference).filter(
-            PaymentRequest.created_at >= start_date
+        references = db.query(UnifiedPayment.payment_reference).filter(
+            UnifiedPayment.created_at >= start_date
         ).all()
         
         stats = {
@@ -210,12 +210,12 @@ class PaymentReferenceService:
         
         # Ищем дубликаты через GROUP BY
         duplicates = db.query(
-            PaymentRequest.payment_reference,
-            func.count(PaymentRequest.id).label('count')
+            UnifiedPayment.payment_reference,
+            func.count(UnifiedPayment.id).label('count')
         ).group_by(
-            PaymentRequest.payment_reference
+            UnifiedPayment.payment_reference
         ).having(
-            func.count(PaymentRequest.id) > 1
+            func.count(UnifiedPayment.id) > 1
         ).all()
         
         result = []
@@ -224,8 +224,8 @@ class PaymentReferenceService:
             count = duplicate[1]
             
             # Получаем детали всех записей с этим референсом
-            records = db.query(PaymentRequest).filter(
-                PaymentRequest.payment_reference == reference
+            records = db.query(UnifiedPayment).filter(
+                UnifiedPayment.payment_reference == reference
             ).all()
             
             result.append({

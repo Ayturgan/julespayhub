@@ -17,6 +17,7 @@ class UnifiedQRCode(Base):
     # Владелец QR-кода (либо продавец, либо админ)
     merchant_id = Column(Integer, ForeignKey("merchants.id"), nullable=True, index=True)
     admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True, index=True)
+    outlet_id = Column(Integer, ForeignKey("trading_points.id"), nullable=True, index=True)
 
     # Основная информация
     name = Column(String(255), nullable=False)
@@ -44,6 +45,7 @@ class UnifiedQRCode(Base):
     # Связи
     merchant = relationship("Merchant")
     admin = relationship("Admin")
+    outlet = relationship("TradingPoint")
     payments = relationship("UnifiedPayment", back_populates="qr_code")
 
     __table_args__ = (
@@ -60,6 +62,7 @@ class UnifiedPayment(Base):
     # Владелец платежа (либо продавец, либо админ)
     merchant_id = Column(Integer, ForeignKey("merchants.id"), nullable=True, index=True)
     admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True, index=True)
+    outlet_id = Column(Integer, ForeignKey("trading_points.id"), nullable=True, index=True)
 
     # Связь с QR-кодом
     qr_code_id = Column(Integer, ForeignKey("unified_qrcodes.id"), nullable=True, index=True)
@@ -76,6 +79,7 @@ class UnifiedPayment(Base):
     receiver_bank_code = Column(String(20), nullable=False)
 
     # Информация о плательщике
+    payer_name = Column(String(255), nullable=True)
     payer_phone = Column(String(20), nullable=True)
     payer_bank_code = Column(String(20), nullable=True, index=True)
     sender_account = Column(String(50), nullable=True)
@@ -117,6 +121,7 @@ class UnifiedPayment(Base):
     # Связи
     merchant = relationship("Merchant")
     admin = relationship("Admin")
+    outlet = relationship("TradingPoint")
     qr_code = relationship("UnifiedQRCode", back_populates="payments")
 
     __table_args__ = (

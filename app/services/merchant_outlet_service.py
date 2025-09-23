@@ -4,8 +4,8 @@
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
-from app.models.merchant import Merchant, TradingPoint, MerchantPayment, QRCode
-from app.models.payment import PaymentRequest
+from app.models.merchant import Merchant, TradingPoint
+from app.models.unified import UnifiedPayment, UnifiedQRCode
 from app.services.token_service import SecureTokenService
 from app.core.config import settings
 from datetime import datetime, timezone, timedelta
@@ -111,10 +111,10 @@ class MerchantOutletService:
         outlet.updated_at = datetime.now(timezone.utc)
         
         # Деактивируем связанные статические QR
-        self.db.query(QRCode).filter(
-            QRCode.merchant_id == merchant.id,
-            QRCode.outlet_id == outlet_id
-        ).update({QRCode.is_active: False})
+        self.db.query(UnifiedQRCode).filter(
+            UnifiedQRCode.merchant_id == merchant.id,
+            UnifiedQRCode.outlet_id == outlet_id
+        ).update({UnifiedQRCode.is_active: False})
         
         self.db.commit()
         self.db.refresh(outlet)
@@ -146,45 +146,41 @@ class MerchantOutletService:
         """
         outlet = self.get_outlet(merchant, outlet_id)
         
-        # Создаем PaymentRequest c outlet_id и без суммы
-        token_uuid = str(uuid.uuid4())
+        # Создаем UnifiedQRCode c outlet_id и без суммы
+        qr_token = str(uuid.uuid4())
         expires_at = datetime.now(timezone.utc) + timedelta(days=365)
-        payment_reference = f"OUTLET-{outlet.id}-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         
-        # Создаем данные для токена ДО сохранения в БД
+        # Создаем данные для токена
         payment_data_for_token = {
             "receiver_account": merchant.bank_account,
             "receiver_bank_code": "TESTBANK",
             "amount": None,
-            "payment_reference": payment_reference,
+            "payment_reference": f"OUTLET-{outlet.id}-{datetime.now().strftime('%Y%m%d%H%M%S')}",
         }
         
         secure_token = SecureTokenService.generate_secure_token(
             payment_data_for_token,
-            token_uuid=token_uuid,
+            token_uuid=qr_token,
             expires_at=expires_at,
         )
         
-        # Теперь создаем PaymentRequest с теми же данными
-        payment_request = PaymentRequest(
-            token=token_uuid,
-            receiver_account=merchant.bank_account,
-            receiver_bank_code="TESTBANK",
-            receiver_name=merchant.name,
-            merchant_id=merchant.id,
+        qr_url = f"{settings.BASE_URL}/pay?token={secure_token}"
+
+        qr_code = UnifiedQRCode(
+            name=f"Outlet QR: {outlet.name}",
             description=f"Статический QR для точки {outlet.name}",
             amount=None,
             currency="KGS",
-            payment_reference=payment_reference,
-            expires_at=expires_at,
-            outlet_id=outlet.id
+            merchant_id=merchant.id,
+            outlet_id=outlet.id,
+            qr_token=qr_token,
+            qr_url=qr_url,
+            expires_at=expires_at
         )
         
-        self.db.add(payment_request)
+        self.db.add(qr_code)
         self.db.commit()
-        self.db.refresh(payment_request)
-        
-        qr_url = f"{settings.BASE_URL}/pay?token={secure_token}"
+        self.db.refresh(qr_code)
         
         # Генерация изображения
         if format == "svg":
@@ -233,13 +229,13 @@ class MerchantOutletService:
         
         # Получаем статистику платежей по этой точке
         stats = self.db.query(
-            func.count(MerchantPayment.id).label('payments_count'),
-            func.sum(MerchantPayment.amount).label('total_amount')
+            func.count(UnifiedPayment.id).label('payments_count'),
+            func.sum(UnifiedPayment.amount).label('total_amount')
         ).filter(
-            MerchantPayment.merchant_id == merchant.id,
-            MerchantPayment.outlet_id == outlet_id,
-            MerchantPayment.status == 'completed',
-            MerchantPayment.created_at >= since
+            UnifiedPayment.merchant_id == merchant.id,
+            UnifiedPayment.outlet_id == outlet_id,
+            UnifiedPayment.status == 'completed',
+            UnifiedPayment.created_at >= since
         ).first()
         
         payments_count = stats.payments_count or 0
@@ -275,15 +271,15 @@ class MerchantOutletService:
         outlet_names = {oid: oname for oid, oname in outlets}
         
         rows = self.db.query(
-            MerchantPayment.outlet_id.label('outlet_id'),
-            func.count(MerchantPayment.id).label('payments_count'),
-            func.sum(MerchantPayment.amount).label('total_amount')
+            UnifiedPayment.outlet_id.label('outlet_id'),
+            func.count(UnifiedPayment.id).label('payments_count'),
+            func.sum(UnifiedPayment.amount).label('total_amount')
         ).filter(
-            MerchantPayment.merchant_id == merchant.id,
-            MerchantPayment.created_at >= since,
-            MerchantPayment.status == 'completed',
-            MerchantPayment.outlet_id.isnot(None)
-        ).group_by(MerchantPayment.outlet_id).all()
+            UnifiedPayment.merchant_id == merchant.id,
+            UnifiedPayment.created_at >= since,
+            UnifiedPayment.status == 'completed',
+            UnifiedPayment.outlet_id.isnot(None)
+        ).group_by(UnifiedPayment.outlet_id).all()
         
         data = []
         for row in rows:

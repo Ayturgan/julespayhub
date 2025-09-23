@@ -11,7 +11,7 @@ from sqlalchemy import func, and_, or_
 import logging
 import threading
 
-from app.models.payment import PaymentRequest, PaymentLog, Bank, TransactionRecord, RateLimitRecord
+from app.models.payment import PaymentLog, Bank, TransactionRecord, RateLimitRecord
 from app.core.config import settings
 from app.services.error_handling_service import ErrorCode, ErrorSeverity
 

@@ -11,7 +11,8 @@ import json
 import asyncio
 
 from app.models.refund import RefundRequest, RefundOperation, RefundStatus, RefundType
-from app.models.merchant import MerchantPayment, Merchant
+from app.models.merchant import Merchant
+from app.models.unified import UnifiedPayment
 from app.schemas.refund import (
     RefundCreate, RefundResponse, RefundListResponse, RefundSummary,
     RefundValidationResult
@@ -53,16 +54,16 @@ class RefundService:
         logger.error(f"🔄 Создание возврата для платежа {original_payment_id} мерчантом {merchant_id}")
         
         # Получаем оригинальный платеж
-        original_payment = db.query(MerchantPayment).filter(
+        original_payment = db.query(UnifiedPayment).filter(
             and_(
-                MerchantPayment.id == original_payment_id,
-                MerchantPayment.merchant_id == merchant_id
+                UnifiedPayment.id == original_payment_id,
+                UnifiedPayment.merchant_id == merchant_id
             )
         ).first()
         
         logger.error(f"🔍 Оригинальный платеж найден: {original_payment is not None}")
         if original_payment:
-            logger.error(f"🔍 Данные платежа: ID={original_payment.id}, статус={original_payment.status}, сумма={original_payment.amount}")
+            logger.error(f"🔍 Данные платежа: ID={original_payment.id}, статус={original_payment.status.value}, сумма={original_payment.amount}")
         
         if not original_payment:
             raise StandardError(
@@ -170,8 +171,8 @@ class RefundService:
             )
         
         # Получаем оригинальный платеж
-        original_payment = db.query(MerchantPayment).filter(
-            MerchantPayment.id == refund_request.original_payment_id
+        original_payment = db.query(UnifiedPayment).filter(
+            UnifiedPayment.id == refund_request.original_payment_id
         ).first()
         
         if not original_payment:
@@ -470,10 +471,10 @@ class RefundService:
         """
         
         # Проверяем, что платеж принадлежит мерчанту
-        payment = db.query(MerchantPayment).filter(
+        payment = db.query(UnifiedPayment).filter(
             and_(
-                MerchantPayment.id == payment_id,
-                MerchantPayment.merchant_id == merchant_id
+                UnifiedPayment.id == payment_id,
+                UnifiedPayment.merchant_id == merchant_id
             )
         ).first()
         
@@ -562,18 +563,18 @@ class RefundService:
     def _validate_refund_creation(
         self, 
         refund_data: RefundCreate, 
-        original_payment: MerchantPayment
+        original_payment: UnifiedPayment
     ) -> RefundValidationResult:
         """Валидация создания возврата"""
         
         validation = RefundValidationResult(valid=True)
         
         # Проверяем статус оригинального платежа
-        logger.error(f"🔍 Проверка статуса платежа: {original_payment.status} (тип: {type(original_payment.status)})")
-        if original_payment.status != "completed":
+        logger.error(f"🔍 Проверка статуса платежа: {original_payment.status.value} (тип: {type(original_payment.status)})")
+        if original_payment.status.value != "completed":
             validation.add_error(
                 "original_payment_status", 
-                f"Возврат возможен только для завершенных платежей. Текущий статус: {original_payment.status}",
+                f"Возврат возможен только для завершенных платежей. Текущий статус: {original_payment.status.value}",
                 "invalid_payment_status"
             )
         
@@ -878,7 +879,7 @@ class RefundService:
         self,
         db: Session,
         refund_request: RefundRequest,
-        original_payment: MerchantPayment
+        original_payment: UnifiedPayment
     ):
         """
         Автоматическое завершение возврата после подтверждения в банках
