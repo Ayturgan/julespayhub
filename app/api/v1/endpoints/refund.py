@@ -13,7 +13,8 @@ import logging
 import time
 
 from app.database import get_db
-from app.models.merchant import Merchant, MerchantPayment
+from app.models.merchant import Merchant
+from app.models.unified import UnifiedPayment
 from app.models.refund import RefundRequest, RefundOperation, RefundStatus, RefundType
 from app.schemas.refund import (
     RefundCreate, RefundResponse, RefundListResponse, RefundSummary,
@@ -582,10 +583,10 @@ async def validate_refund(
         refund_service = RefundService()
         
         # Получаем оригинальный платеж для валидации
-        original_payment = db.query(MerchantPayment).filter(
+        original_payment = db.query(UnifiedPayment).filter(
             and_(
-                MerchantPayment.id == refund_data.original_payment_id,
-                MerchantPayment.merchant_id == current_merchant.id
+                UnifiedPayment.id == refund_data.original_payment_id,
+                UnifiedPayment.merchant_id == current_merchant.id
             )
         ).first()
         
@@ -826,8 +827,8 @@ async def complete_refund(
             )
         
         # Получаем оригинальный платеж
-        original_payment = db.query(MerchantPayment).filter(
-            MerchantPayment.id == refund_obj.original_payment_id
+        original_payment = db.query(UnifiedPayment).filter(
+            UnifiedPayment.id == refund_obj.original_payment_id
         ).first()
         
         if not original_payment:

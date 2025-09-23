@@ -2,8 +2,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.merchant import MerchantPayment
-from app.models.payment import Bank, PaymentRequest
+from app.models.unified import UnifiedPayment
+from app.models.payment import Bank
 from sqlalchemy import func, and_, desc
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any
@@ -15,16 +15,16 @@ async def get_admin_stats_summary(db: Session = Depends(get_db)):
     """Сводная статистика для мониторинга"""
     
     # Считаем общие метрики
-    total_transactions = db.query(MerchantPayment).count()
-    successful_transactions = db.query(MerchantPayment).filter(
-        MerchantPayment.status == 'completed'
+    total_transactions = db.query(UnifiedPayment).count()
+    successful_transactions = db.query(UnifiedPayment).filter(
+        UnifiedPayment.status == 'completed'
     ).count()
     
     success_rate = round((successful_transactions / total_transactions * 100), 1) if total_transactions > 0 else 0
     
     # Средняя сумма успешных платежей
-    avg_amount_result = db.query(func.avg(MerchantPayment.amount)).filter(
-        MerchantPayment.status == 'completed'
+    avg_amount_result = db.query(func.avg(UnifiedPayment.amount)).filter(
+        UnifiedPayment.status == 'completed'
     ).scalar()
     avg_amount = float(avg_amount_result) if avg_amount_result else 0
     
@@ -47,7 +47,7 @@ async def get_system_stats(db: Session = Depends(get_db)):
     # Подсчитываем основные метрики
     total_banks = db.query(Bank).count()
     active_banks = db.query(Bank).filter(Bank.is_active == True).count()
-    total_payments = db.query(PaymentRequest).count()
+    total_payments = db.query(UnifiedPayment).count()
     total_merchants = db.query(Merchant).count()
     total_admins = db.query(Admin).count()
     total_transactions = db.query(TransactionRecord).count()
@@ -57,8 +57,8 @@ async def get_system_stats(db: Session = Depends(get_db)):
     today = datetime.now().date()
     today_start = datetime.combine(today, datetime.min.time())
     
-    today_payments = db.query(PaymentRequest)\
-        .filter(PaymentRequest.created_at >= today_start)\
+    today_payments = db.query(UnifiedPayment)\
+        .filter(UnifiedPayment.created_at >= today_start)\
         .count()
     today_transactions = db.query(TransactionRecord)\
         .filter(TransactionRecord.processed_at >= today_start)\
@@ -93,21 +93,21 @@ async def get_dashboard_summary(db: Session = Depends(get_db)) -> Dict[str, Any]
     # === KPI за сегодня с динамикой ===
     
     # Оборот за сегодня (от 00:00 до 24:00 текущего дня)
-    today_revenue_query = db.query(func.sum(MerchantPayment.amount)).filter(
+    today_revenue_query = db.query(func.sum(UnifiedPayment.amount)).filter(
         and_(
-            MerchantPayment.created_at >= today_start,
-            MerchantPayment.created_at < today_end,  # Добавляем верхнюю границу
-            MerchantPayment.status == 'completed'
+            UnifiedPayment.created_at >= today_start,
+            UnifiedPayment.created_at < today_end,  # Добавляем верхнюю границу
+            UnifiedPayment.status == 'completed'
         )
     )
     today_revenue = float(today_revenue_query.scalar() or 0)
     
     # Оборот за вчера (полные сутки)
-    yesterday_revenue_query = db.query(func.sum(MerchantPayment.amount)).filter(
+    yesterday_revenue_query = db.query(func.sum(UnifiedPayment.amount)).filter(
         and_(
-            MerchantPayment.created_at >= yesterday_start,
-            MerchantPayment.created_at < yesterday_end,
-            MerchantPayment.status == 'completed'
+            UnifiedPayment.created_at >= yesterday_start,
+            UnifiedPayment.created_at < yesterday_end,
+            UnifiedPayment.status == 'completed'
         )
     )
     yesterday_revenue = float(yesterday_revenue_query.scalar() or 0)
@@ -117,19 +117,19 @@ async def get_dashboard_summary(db: Session = Depends(get_db)) -> Dict[str, Any]
         revenue_change = ((today_revenue - yesterday_revenue) / yesterday_revenue) * 100
     
     # Успешные платежи за сегодня и вчера
-    today_payments_count = db.query(func.count(MerchantPayment.id)).filter(
+    today_payments_count = db.query(func.count(UnifiedPayment.id)).filter(
         and_(
-            MerchantPayment.created_at >= today_start,
-            MerchantPayment.created_at < today_end,  # Добавляем верхнюю границу
-            MerchantPayment.status == 'completed'
+            UnifiedPayment.created_at >= today_start,
+            UnifiedPayment.created_at < today_end,  # Добавляем верхнюю границу
+            UnifiedPayment.status == 'completed'
         )
     ).scalar() or 0
     
-    yesterday_payments_count = db.query(func.count(MerchantPayment.id)).filter(
+    yesterday_payments_count = db.query(func.count(UnifiedPayment.id)).filter(
         and_(
-            MerchantPayment.created_at >= yesterday_start,
-            MerchantPayment.created_at < yesterday_end,
-            MerchantPayment.status == 'completed'
+            UnifiedPayment.created_at >= yesterday_start,
+            UnifiedPayment.created_at < yesterday_end,
+            UnifiedPayment.status == 'completed'
         )
     ).scalar() or 0
     
@@ -146,16 +146,16 @@ async def get_dashboard_summary(db: Session = Depends(get_db)) -> Dict[str, Any]
         avg_check_change = ((today_avg_check - yesterday_avg_check) / yesterday_avg_check) * 100
     
     # Активные алерты (упрощенно - считаем failed платежи как алерты)
-    active_alerts = db.query(func.count(MerchantPayment.id)).filter(
+    active_alerts = db.query(func.count(UnifiedPayment.id)).filter(
         and_(
-            MerchantPayment.created_at >= today_start,
-            MerchantPayment.created_at < today_end,  # Добавляем верхнюю границу
-            MerchantPayment.status == 'failed'
+            UnifiedPayment.created_at >= today_start,
+            UnifiedPayment.created_at < today_end,  # Добавляем верхнюю границу
+            UnifiedPayment.status == 'failed'
         )
     ).scalar() or 0
     
-    # Отладочная информация: проверим общее количество записей MerchantPayment
-    total_merchant_payments = db.query(func.count(MerchantPayment.id)).scalar() or 0
+    # Отладочная информация: проверим общее количество записей UnifiedPayment
+    total_merchant_payments = db.query(func.count(UnifiedPayment.id)).scalar() or 0
     
     # === Данные для графиков ===
     
@@ -165,11 +165,11 @@ async def get_dashboard_summary(db: Session = Depends(get_db)) -> Dict[str, Any]
         day_start = today_start - timedelta(days=i)
         day_end = day_start + timedelta(days=1)
         
-        day_revenue = db.query(func.sum(MerchantPayment.amount)).filter(
+        day_revenue = db.query(func.sum(UnifiedPayment.amount)).filter(
             and_(
-                MerchantPayment.created_at >= day_start,
-                MerchantPayment.created_at < day_end,
-                MerchantPayment.status == 'completed'
+                UnifiedPayment.created_at >= day_start,
+                UnifiedPayment.created_at < day_end,
+                UnifiedPayment.status == 'completed'
             )
         ).scalar() or 0
         
@@ -180,14 +180,14 @@ async def get_dashboard_summary(db: Session = Depends(get_db)) -> Dict[str, Any]
     
     # Соотношение статусов за 24 часа (полные сутки)
     status_stats = db.query(
-        MerchantPayment.status,
-        func.count(MerchantPayment.id)
+        UnifiedPayment.status,
+        func.count(UnifiedPayment.id)
     ).filter(
         and_(
-            MerchantPayment.created_at >= today_start,
-            MerchantPayment.created_at < today_end
+            UnifiedPayment.created_at >= today_start,
+            UnifiedPayment.created_at < today_end
         )
-    ).group_by(MerchantPayment.status).all()
+    ).group_by(UnifiedPayment.status).all()
     
     status_distribution = {}
     total_transactions = 0
@@ -217,13 +217,13 @@ async def get_dashboard_summary(db: Session = Depends(get_db)) -> Dict[str, Any]
     recent_events = []
     
     # Последние крупные успешные платежи (>10000)
-    large_payments = db.query(MerchantPayment).filter(
+    large_payments = db.query(UnifiedPayment).filter(
         and_(
-            MerchantPayment.amount >= 10000,
-            MerchantPayment.status == 'completed',
-            MerchantPayment.created_at >= week_ago
+            UnifiedPayment.amount >= 10000,
+            UnifiedPayment.status == 'completed',
+            UnifiedPayment.created_at >= week_ago
         )
-    ).order_by(desc(MerchantPayment.created_at)).limit(3).all()
+    ).order_by(desc(UnifiedPayment.created_at)).limit(3).all()
     
     for payment in large_payments:
         recent_events.append({
@@ -235,12 +235,12 @@ async def get_dashboard_summary(db: Session = Depends(get_db)) -> Dict[str, Any]
         })
     
     # Последние failed платежи как критические события
-    failed_payments = db.query(MerchantPayment).filter(
+    failed_payments = db.query(UnifiedPayment).filter(
         and_(
-            MerchantPayment.status == 'failed',
-            MerchantPayment.created_at >= today_start
+            UnifiedPayment.status == 'failed',
+            UnifiedPayment.created_at >= today_start
         )
-    ).order_by(desc(MerchantPayment.created_at)).limit(2).all()
+    ).order_by(desc(UnifiedPayment.created_at)).limit(2).all()
     
     for payment in failed_payments:
         recent_events.append({

@@ -6,8 +6,8 @@ from app.services.realtime_monitoring_service import realtime_monitoring_service
 from app.models.payment import Bank
 from app.models.payment import TransactionRecord, BillingRecord
 from app.services.hybrid_logging_service import hybrid_logging_service
-from app.models.payment import PaymentRequest
-from app.models.merchant import Merchant, MerchantPayment
+from app.models.unified import UnifiedPayment
+from app.models.merchant import Merchant
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from app.services.bank_adapter_service import bank_adapter_service
@@ -753,8 +753,8 @@ async def get_business_funnel(hours: int = 24, db: Session = Depends(get_db)):
     """
     try:
         since = datetime.now() - timedelta(hours=hours)
-        # Надежнее считать по PaymentRequest, а не по логам
-        qr_generated = db.query(func.count(PaymentRequest.id)).filter(PaymentRequest.created_at >= since).scalar() or 0
+        # Надежнее считать по UnifiedPayment, а не по логам
+        qr_generated = db.query(func.count(UnifiedPayment.id)).filter(UnifiedPayment.created_at >= since).scalar() or 0
         
         # Сканирования = используем данные из realtime monitoring
         # TODO: Добавить метод в realtime_monitoring_service для получения количества сканирований
@@ -777,7 +777,7 @@ async def get_top_merchants(limit: int = 10, days: int = 7, db: Session = Depend
     """
     try:
         since = datetime.now() - timedelta(days=days)
-        rows = db.query(MerchantPayment.merchant_id, func.count(MerchantPayment.id).label("cnt")).filter(and_(MerchantPayment.paid_at.isnot(None), MerchantPayment.paid_at >= since)).group_by(MerchantPayment.merchant_id).order_by(desc("cnt")).limit(limit).all()
+        rows = db.query(UnifiedPayment.merchant_id, func.count(UnifiedPayment.id).label("cnt")).filter(and_(UnifiedPayment.paid_at.isnot(None), UnifiedPayment.paid_at >= since)).group_by(UnifiedPayment.merchant_id).order_by(desc("cnt")).limit(limit).all()
 
         merchant_ids = [r[0] for r in rows if r[0] is not None]
         names = {m.id: m.name for m in db.query(Merchant).filter(Merchant.id.in_(merchant_ids)).all()} if merchant_ids else {}

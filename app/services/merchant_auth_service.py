@@ -4,7 +4,8 @@ import hmac
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 from sqlalchemy.orm import Session
-from app.models.merchant import Merchant, MerchantPayment
+from app.models.merchant import Merchant
+from app.models.unified import UnifiedPayment
 from app.schemas.merchant import MerchantRegister, MerchantLogin
 from app.services.error_handling_service import ErrorHandlingService, ErrorCode, ErrorSeverity
 from fastapi import HTTPException
@@ -139,10 +140,10 @@ class MerchantAuthService:
             hour=0, minute=0, second=0, microsecond=0
         )
         
-        daily_payments = self.db.query(MerchantPayment).filter(
-            MerchantPayment.merchant_id == merchant.id,
-            MerchantPayment.created_at >= today_start,
-            MerchantPayment.status == "completed"
+        daily_payments = self.db.query(UnifiedPayment).filter(
+            UnifiedPayment.merchant_id == merchant.id,
+            UnifiedPayment.created_at >= today_start,
+            UnifiedPayment.status == "completed"
         ).all()
         
         daily_total = sum(payment.amount for payment in daily_payments)
@@ -162,10 +163,10 @@ class MerchantAuthService:
             day=1, hour=0, minute=0, second=0, microsecond=0
         )
         
-        monthly_payments = self.db.query(MerchantPayment).filter(
-            MerchantPayment.merchant_id == merchant.id,
-            MerchantPayment.created_at >= month_start,
-            MerchantPayment.status == "completed"
+        monthly_payments = self.db.query(UnifiedPayment).filter(
+            UnifiedPayment.merchant_id == merchant.id,
+            UnifiedPayment.created_at >= month_start,
+            UnifiedPayment.status == "completed"
         ).all()
         
         monthly_total = sum(payment.amount for payment in monthly_payments)
