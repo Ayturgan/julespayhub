@@ -10,13 +10,6 @@ class MerchantStatus(str, Enum):
     SUSPENDED = "suspended"
     PENDING_VERIFICATION = "pending_verification"
 
-class PaymentStatus(str, Enum):
-    """Статусы платежей"""
-    PENDING = "pending"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
 # Схемы для регистрации и аутентификации
 class MerchantRegister(BaseModel):
     """Схема для регистрации продавца"""
@@ -86,70 +79,6 @@ class MerchantResponse(BaseModel):
 class MerchantDetailResponse(MerchantResponse):
     """Схема ответа с детальной информацией о продавце"""
     total_amount: Optional[float] = 0
-
-# Схемы для QR-кодов
-class QRCodeCreate(BaseModel):
-    """Схема для создания QR-кода"""
-    name: str
-    description: Optional[str] = None
-    amount: Optional[float] = None
-    currency: str = "KGS"
-    expires_at: Optional[datetime] = None
-    expires_in_minutes: Optional[int] = None
-    max_uses: Optional[int] = None
-    outlet_id: Optional[int] = None
-
-class QRCodeResponse(BaseModel):
-    """Схема ответа с данными QR-кода"""
-    id: int
-    merchant_id: int
-    name: str
-    description: Optional[str]
-    amount: Optional[float]
-    currency: str
-    qr_token: str
-    qr_url: str
-    qr_image_path: Optional[str]
-    qr_image_base64: Optional[str]
-    is_active: bool
-    expires_at: Optional[datetime]
-    max_uses: Optional[int]
-    current_uses: int
-    created_at: datetime
-    updated_at: datetime
-    
-    @field_serializer('created_at', 'updated_at', 'expires_at')
-    def serialize_datetime(self, dt: Optional[datetime]) -> Optional[str]:
-        if dt is None:
-            return None
-        # Конвертируем UTC время в локальное время пользователя (UTC+6 для Кыргызстана)
-        local_dt = dt.replace(tzinfo=timezone.utc).astimezone(timezone(timedelta(hours=6)))
-        return local_dt.isoformat()
-    
-    class Config:
-        from_attributes = True
-
-# Схемы для платежей
-class MerchantPaymentResponse(BaseModel):
-    """Схема ответа с данными платежа продавца"""
-    id: int
-    merchant_id: int
-    qr_code_id: Optional[int]
-    outlet_id: Optional[int]
-    amount: float
-    currency: str
-    status: PaymentStatus
-    payer_phone: Optional[str]
-    payer_bank_code: Optional[str]
-    sender_account: Optional[str]  # Счет плательщика
-    transaction_id: Optional[str]
-    bank_transaction_id: Optional[str]
-    created_at: datetime
-    paid_at: Optional[datetime]
-    error_message: Optional[str]
-    
-    class Config:
-        from_attributes = True
 
 # Схемы для обновления профиля
 class MerchantProfileUpdate(BaseModel):

@@ -90,11 +90,3 @@ class AdminFullResponse(AdminResponse):
     address: Optional[str] = None
     qr_settings: Optional[Dict[str, Any]] = None
     has_complete_profile: bool = False
-
-class AdminQRCodeCreate(BaseModel):
-    """Схема для создания QR-кода администратором"""
-    name: str
-    description: Optional[str] = None
-    amount: Optional[float] = None
-    currency: str = "KGS"
-    expires_hours: Optional[int] = 24
