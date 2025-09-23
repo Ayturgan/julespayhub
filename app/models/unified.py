@@ -5,7 +5,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
-from app.models.payment import TransactionStatus
+from app.schemas.unified_payment import PaymentStatus
 
 
 class UnifiedQRCode(Base):
@@ -68,7 +68,7 @@ class UnifiedPayment(Base):
     amount = Column(Float, nullable=False)
     currency = Column(String(3), default="KGS")
     description = Column(Text, nullable=False)
-    status = Column(Enum(TransactionStatus), default=TransactionStatus.PENDING, nullable=False, index=True)
+    status = Column(Enum(PaymentStatus), default=PaymentStatus.PENDING, nullable=False, index=True)
 
     # Информация о получателе
     receiver_name = Column(String(255), nullable=False)
