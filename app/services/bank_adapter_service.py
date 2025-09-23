@@ -6,7 +6,8 @@ import json
 import logging
 import httpx
 from datetime import datetime
-from app.models.payment import Bank, PaymentRequest
+from app.models.payment import Bank
+from app.models.unified import UnifiedPayment
 from app.schemas.payment import PaymentInfo, PaymentStatusWebhook
 from app.schemas.bank import (
     TransactionPrepareRequest, TransactionPrepareResponse,
@@ -154,7 +155,7 @@ class BaseBankAdapter(ABC):
         self.logger = logging.getLogger(f"{__name__}.{config.bank_code}")
     
     @abstractmethod
-    def format_payment_info(self, payment_request: PaymentRequest) -> Dict[str, Any]:
+    def format_payment_info(self, payment_request: UnifiedPayment) -> Dict[str, Any]:
         """Форматирование информации о платеже для конкретного банка"""
         pass
     
@@ -464,7 +465,7 @@ class BaseBankAdapter(ABC):
 class StandardBankAdapter(BaseBankAdapter):
     """Стандартный адаптер для большинства банков"""
     
-    def format_payment_info(self, payment_request: PaymentRequest) -> Dict[str, Any]:
+    def format_payment_info(self, payment_request: UnifiedPayment) -> Dict[str, Any]:
         """Стандартное форматирование информации о платеже"""
         
         return {
@@ -536,7 +537,7 @@ class SimulationBankAdapter(BaseBankAdapter):
         endpoint = endpoint_mapping.get(operation, f"/api/v1/banks/refunds/{operation}")
         return f"{base_url.rstrip('/')}{endpoint}"
     
-    def format_payment_info(self, payment_request: PaymentRequest) -> Dict[str, Any]:
+    def format_payment_info(self, payment_request: UnifiedPayment) -> Dict[str, Any]:
         """Форматирование информации о платеже для симулятора"""
         return {
             "receiver_account": payment_request.receiver_account,
@@ -559,7 +560,7 @@ class SimulationBankAdapter(BaseBankAdapter):
 class LegacyBankAdapter(BaseBankAdapter):
     """Адаптер для устаревших банковских систем"""
     
-    def format_payment_info(self, payment_request: PaymentRequest) -> Dict[str, Any]:
+    def format_payment_info(self, payment_request: UnifiedPayment) -> Dict[str, Any]:
         """Форматирование для устаревших систем"""
         
         # Устаревшие системы часто требуют другие названия полей
@@ -692,7 +693,7 @@ class LegacyBankAdapter(BaseBankAdapter):
 class MobileBankAdapter(BaseBankAdapter):
     """Адаптер для мобильных банков"""
     
-    def format_payment_info(self, payment_request: PaymentRequest) -> Dict[str, Any]:
+    def format_payment_info(self, payment_request: UnifiedPayment) -> Dict[str, Any]:
         """Форматирование для мобильных банков"""
         
         # Мобильные банки предпочитают краткие поля
@@ -795,7 +796,7 @@ class BankAdapterService:
     def format_payment_info_for_bank(
         self, 
         bank_code: str, 
-        payment_request: PaymentRequest
+        payment_request: UnifiedPayment
     ) -> Dict[str, Any]:
         """Форматирование информации о платеже для конкретного банка"""
         

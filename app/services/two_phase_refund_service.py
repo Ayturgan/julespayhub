@@ -13,9 +13,10 @@ import asyncio
 import aiohttp
 from contextlib import asynccontextmanager
 
-from app.models.payment import PaymentRequest, TransactionStatus, TwoPhaseOperation, Bank
+from app.models.unified import UnifiedPayment
+from app.models.payment import TransactionStatus, TwoPhaseOperation, Bank
 from app.models.refund import RefundRequest, RefundOperation, RefundStatus, RefundType
-from app.models.merchant import MerchantPayment, Merchant
+from app.models.merchant import Merchant
 from app.schemas.bank import (
     TransactionPrepareRequest, TransactionPrepareResponse,
     TransactionCommitRequest, TransactionCommitResponse,
@@ -64,8 +65,8 @@ class TwoPhaseRefundService:
                 }
             
             # Получаем оригинальный платеж
-            original_payment = db.query(MerchantPayment).filter(
-                MerchantPayment.id == refund_request.original_payment_id
+            original_payment = db.query(UnifiedPayment).filter(
+                UnifiedPayment.id == refund_request.original_payment_id
             ).first()
             if not original_payment:
                 return {
@@ -111,7 +112,7 @@ class TwoPhaseRefundService:
             try:
                 # Получаем свежие объекты из новой сессии
                 fresh_refund_request = new_db.query(RefundRequest).filter(RefundRequest.id == refund_id).first()
-                fresh_original_payment = new_db.query(MerchantPayment).filter(MerchantPayment.id == original_payment_id).first()
+                fresh_original_payment = new_db.query(UnifiedPayment).filter(UnifiedPayment.id == original_payment_id).first()
                 
                 if not fresh_refund_request or not fresh_original_payment:
                     logger.error(f"❌ Не удалось найти объекты в новой сессии для возврата {refund_id}")
@@ -141,7 +142,7 @@ class TwoPhaseRefundService:
         self, 
         db: Session, 
         refund_request: RefundRequest,
-        original_payment: MerchantPayment
+        original_payment: UnifiedPayment
     ) -> Dict[str, Any]:
         """
         Основной метод выполнения двухфазного возврата
@@ -391,14 +392,14 @@ class TwoPhaseRefundService:
         self, 
         db: Session,
         refund_request: RefundRequest, 
-        original_payment: MerchantPayment
+        original_payment: UnifiedPayment
     ) -> RefundValidationResult:
         """Валидация запроса на возврат"""
         
         validation = RefundValidationResult(valid=True)
         
         # Проверяем статус оригинального платежа
-        if original_payment.status.lower() != "completed":
+        if original_payment.status.value.lower() != "completed":
             validation.add_error(
                 "original_payment_status", 
                 "Возврат возможен только для завершенных платежей",
@@ -460,7 +461,7 @@ class TwoPhaseRefundService:
         self, 
         db: Session, 
         refund_request: RefundRequest,
-        original_payment: MerchantPayment
+        original_payment: UnifiedPayment
     ) -> Dict[str, Any]:
         """Выполнение фазы подготовки возврата"""
         
@@ -1073,7 +1074,7 @@ class TwoPhaseRefundService:
     def _update_original_payment_refund_status(
         self, 
         db: Session, 
-        original_payment: MerchantPayment, 
+        original_payment: UnifiedPayment,
         refund_request: RefundRequest
     ):
         """Обновление статуса возврата в оригинальном платеже"""

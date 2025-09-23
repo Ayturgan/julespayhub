@@ -4,6 +4,7 @@
 
 from typing import Dict, Any
 from app.services.bank_adapter_service import MobileBankAdapter, BankConfiguration, BankType
+from app.models.unified import UnifiedPayment
 from app.schemas.bank import (
     TransactionPrepareRequest, TransactionPrepareResponse,
     TransactionCommitRequest, TransactionCommitResponse,
@@ -23,7 +24,7 @@ class MobileBankRefundAdapter(MobileBankAdapter):
         # Мобильный банк НЕ поддерживает возвраты
         self.config.supports_refunds = False
     
-    def format_payment_info(self, payment_request) -> Dict[str, Any]:
+    def format_payment_info(self, payment_request: UnifiedPayment) -> Dict[str, Any]:
         """Форматирование информации о платеже для мобильного банка"""
         
         # Мобильный банк использует упрощенный формат

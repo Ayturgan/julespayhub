@@ -6,7 +6,7 @@ from enum import Enum
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from app.services.error_handling_service import StandardError, ErrorCode, ErrorSeverity
-from app.models.payment import Bank, PaymentRequest
+from app.models.payment import Bank
 import logging
 
 logger = logging.getLogger(__name__)

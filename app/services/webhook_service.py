@@ -3,8 +3,9 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from app.models.payment import PaymentRequest, TransactionRecord
-from app.models.merchant import Merchant, MerchantPayment, QRCode
+from app.models.payment import TransactionRecord
+from app.models.merchant import Merchant
+from app.models.unified import UnifiedPayment, UnifiedQRCode
 from app.schemas.payment import PaymentStatusWebhook
 from app.services.token_service import SecureTokenService
 from app.services.billing_service import BillingService
@@ -63,8 +64,8 @@ class WebhookService:
             }
         
         # Ищем платежный запрос
-        payment_request = db.query(PaymentRequest).filter(
-            PaymentRequest.token == token_uuid
+        payment_request = db.query(UnifiedPayment).join(UnifiedQRCode).filter(
+            UnifiedQRCode.qr_token == token_uuid
         ).first()
         
         if not payment_request:
@@ -173,23 +174,7 @@ class WebhookService:
                     "status_code": 400
                 }
 
-        # Переносим outlet_id из PaymentRequest/QRCode в запись платежа
-        try:
-            # попытаемся извлечь outlet_id из QRCode или самого payment_request
-            outlet_id = None
-            try:
-                from app.models.merchant import QRCode
-                qr = db.query(QRCode).filter(QRCode.qr_token == payment_request.token).first()
-                outlet_id = getattr(qr, 'outlet_id', None)
-            except Exception:
-                outlet_id = None
-            if getattr(payment_request, 'outlet_id', None):
-                outlet_id = payment_request.outlet_id
-            if outlet_id:
-                transaction_record.outlet_id = outlet_id
-                db.commit()
-        except Exception:
-            pass
+        # The outlet_id logic is removed as it's not part of the new unified models.
 
         result = WebhookService._update_payment_status(
             payment_request, webhook_data
@@ -212,7 +197,8 @@ class WebhookService:
                     payment_request=payment_request,
                     transaction_record=transaction_record,
                     webhook_data=webhook_data,
-                    payer_bank_code=bank_code  # Банк, отправивший webhook
+                    payer_bank_code=bank_code,  # Банк, отправивший webhook
+                    token_uuid=token_uuid
                 )
                 result["billing_record_id"] = billing_record.id
                 # Событие: создана биллинговая запись (после transaction_recorded)
@@ -251,7 +237,7 @@ class WebhookService:
     @staticmethod
     def _process_merchant_notification(
         db: Session,
-        payment_request: PaymentRequest,
+        payment_request: UnifiedPayment,
         webhook_data: PaymentStatusWebhook,
         transaction_record: TransactionRecord
     ) -> Dict[str, Any]:
@@ -260,7 +246,7 @@ class WebhookService:
         
         Args:
             db: Сессия базы данных
-            payment_request: Платежный запрос
+            payment_request: Платежный запрос (UnifiedPayment)
             webhook_data: Данные webhook
             transaction_record: Запись о транзакции
             
@@ -281,14 +267,7 @@ class WebhookService:
             if not merchant:
                 return {"notified": False, "reason": "Merchant not found"}
             
-            # Создаем или обновляем запись о платеже продавца
-            # Ищем по transaction_id, так как payment_request_id не существует в модели
-            merchant_payment = db.query(MerchantPayment).filter(
-                MerchantPayment.transaction_id == webhook_data.transaction_id,
-                MerchantPayment.merchant_id == merchant.id
-            ).first()
-            
-            # Маппинг статуса из webhook -> статус продавца
+            # Обновляем запись о платеже (payment_request - это и есть наш платеж)
             status_in = (webhook_data.status or "").lower()
             if status_in in ("success", "completed"):
                 mapped_status = "completed"
@@ -297,60 +276,37 @@ class WebhookService:
             else:
                 mapped_status = "pending"
 
-            if not merchant_payment:
-                # Создаем новую запись о платеже продавца
-                merchant_payment = MerchantPayment(
-                    merchant_id=merchant.id,
-                    qr_code_id=None,  # Заполним ниже, если найдём QR-код
-                    outlet_id=payment_request.outlet_id,  # Берем из payment_request
-                    amount=webhook_data.amount,
-                    currency=payment_request.currency,
-                    status=mapped_status,
-                    payer_phone=webhook_data.payer_phone,
-                    payer_bank_code=transaction_record.bank_code,
-                    sender_account=payment_request.sender_account,  # Счет плательщика из PaymentRequest
-                    transaction_id=webhook_data.transaction_id,
-                    bank_transaction_id=webhook_data.bank_transaction_id,  # ID банка
-                    paid_at=datetime.now() if mapped_status == "completed" else None
-                )
-                db.add(merchant_payment)
-            else:
-                # Обновляем существующую запись
-                merchant_payment.status = mapped_status
-                merchant_payment.amount = webhook_data.amount
-                merchant_payment.payer_phone = webhook_data.payer_phone
-                merchant_payment.transaction_id = webhook_data.transaction_id
-                merchant_payment.bank_transaction_id = webhook_data.bank_transaction_id  # ID банка
-                merchant_payment.payer_bank_code = transaction_record.bank_code
-                merchant_payment.sender_account = payment_request.sender_account  # Счет плательщика из PaymentRequest
-                merchant_payment.outlet_id = payment_request.outlet_id  # Обновляем outlet_id
-                merchant_payment.paid_at = datetime.now() if mapped_status == "completed" else merchant_payment.paid_at
+            payment_request.status = mapped_status
+            payment_request.amount = webhook_data.amount
+            payment_request.payer_phone = webhook_data.payer_phone
+            payment_request.transaction_id = webhook_data.transaction_id
+            payment_request.payer_bank_code = transaction_record.bank_code
+            payment_request.paid_at = datetime.now() if mapped_status == "completed" else None
             
             # Ищем связанный QR-код (если платеж был через QR-код продавца)
-            qr_code = db.query(QRCode).filter(
-                QRCode.qr_token == payment_request.token
-            ).first()
-            
-            if qr_code and qr_code.merchant_id == merchant.id:
-                merchant_payment.qr_code_id = qr_code.id
+            if payment_request.qr_code_id:
+                qr_code = db.query(UnifiedQRCode).filter(
+                    UnifiedQRCode.id == payment_request.qr_code_id
+                ).first()
                 
-                # Обновляем счетчик использований QR-кода
-                if webhook_data.status == "success":
-                    qr_code.current_uses += 1
-                    
-                    # Деактивируем QR-код, если достигнут лимит использований
-                    if qr_code.max_uses and qr_code.current_uses >= qr_code.max_uses:
-                        qr_code.is_active = False
+                if qr_code and qr_code.merchant_id == merchant.id:
+                    # Обновляем счетчик использований QR-кода
+                    if webhook_data.status == "success":
+                        qr_code.current_uses += 1
+
+                        # Деактивируем QR-код, если достигнут лимит использований
+                        if qr_code.max_uses and qr_code.current_uses >= qr_code.max_uses:
+                            qr_code.is_active = False
             
             # Отправляем уведомление продавцу (здесь можно добавить email, SMS, webhook)
             notification_sent = WebhookService._send_merchant_notification(
-                merchant, merchant_payment, webhook_data
+                merchant, payment_request, webhook_data
             )
             
             return {
                 "notified": True,
                 "notification_sent": notification_sent,
-                "merchant_payment_id": merchant_payment.id
+                "merchant_payment_id": payment_request.id
             }
             
         except Exception as e:
@@ -362,7 +318,7 @@ class WebhookService:
     @staticmethod
     def _send_merchant_notification(
         merchant: Merchant,
-        merchant_payment: MerchantPayment,
+        merchant_payment: UnifiedPayment,
         webhook_data: PaymentStatusWebhook
     ) -> bool:
         """
@@ -370,7 +326,7 @@ class WebhookService:
         
         Args:
             merchant: Объект продавца
-            merchant_payment: Запись о платеже продавца
+            merchant_payment: Запись о платеже продавца (UnifiedPayment)
             webhook_data: Данные webhook
             
         Returns:
@@ -391,7 +347,7 @@ class WebhookService:
             notification_message = f"""
             Новый платеж для {merchant.name}:
             - Сумма: {merchant_payment.amount} {merchant_payment.currency}
-            - Статус: {merchant_payment.status}
+            - Статус: {merchant_payment.status.value}
             - Плательщик: {merchant_payment.payer_phone}
             - Транзакция: {merchant_payment.transaction_id}
             """
@@ -413,14 +369,14 @@ class WebhookService:
     
     @staticmethod
     def _update_payment_status(
-        payment_request: PaymentRequest,
+        payment_request: UnifiedPayment,
         webhook_data: PaymentStatusWebhook
     ) -> Dict[str, Any]:
         """
         Обновление статуса платежа
         
         Args:
-            payment_request: Объект платежного запроса
+            payment_request: Объект платежного запроса (UnifiedPayment)
             webhook_data: Данные webhook
             
         Returns:
@@ -439,11 +395,10 @@ class WebhookService:
                 
                 # Обновляем статус на успешный
                 payment_request.is_paid = True
-                payment_request.is_used = True
                 payment_request.transaction_id = webhook_data.transaction_id
                 payment_request.payer_phone = webhook_data.payer_phone
-                payment_request.paid_amount = webhook_data.amount
-                payment_request.paid_at = webhook_data.timestamp
+                payment_request.paid_at = datetime.now()
+                payment_request.status = 'completed'
                 
                 return {
                     "success": True,
@@ -454,7 +409,7 @@ class WebhookService:
             elif webhook_data.status == "failed":
                 # Обрабатываем неудачный платеж
                 payment_request.transaction_id = webhook_data.transaction_id
-                # is_used остается False для возможности повторной оплаты
+                payment_request.status = 'failed'
                 
                 return {
                     "success": True,
@@ -531,6 +486,6 @@ class WebhookService:
             list: Список платежей продавца
         """
         
-        return db.query(MerchantPayment).filter(
-            MerchantPayment.merchant_id == merchant.id
-        ).order_by(MerchantPayment.processed_at.desc()).offset(skip).limit(limit).all()
+        return db.query(UnifiedPayment).filter(
+            UnifiedPayment.merchant_id == merchant.id
+        ).order_by(UnifiedPayment.created_at.desc()).offset(skip).limit(limit).all()

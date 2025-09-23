@@ -4,7 +4,8 @@
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
-from app.models.merchant import Merchant, MerchantPayment
+from app.models.merchant import Merchant
+from app.models.unified import UnifiedPayment
 from datetime import datetime, timezone, timedelta, date
 from typing import Optional, List, Dict, Any
 import io
@@ -38,42 +39,42 @@ class MerchantPaymentService:
         Returns:
             SQLAlchemy Query: Запрос с примененными фильтрами
         """
-        query = self.db.query(MerchantPayment).filter(
-            MerchantPayment.merchant_id == merchant.id
+        query = self.db.query(UnifiedPayment).filter(
+            UnifiedPayment.merchant_id == merchant.id
         )
         
         # Фильтр по статусу
         if status:
-            query = query.filter(MerchantPayment.status == status)
+            query = query.filter(UnifiedPayment.status == status)
             
         # Фильтры по дате
         if date_from:
             try:
                 dt_from = datetime.fromisoformat(date_from.replace('Z', '+00:00'))
-                query = query.filter(MerchantPayment.created_at >= dt_from)
+                query = query.filter(UnifiedPayment.created_at >= dt_from)
             except ValueError:
                 raise ValueError("Invalid date_from format")
                 
         if date_to:
             try:
                 dt_to = datetime.fromisoformat(date_to.replace('Z', '+00:00'))
-                query = query.filter(MerchantPayment.created_at <= dt_to)
+                query = query.filter(UnifiedPayment.created_at <= dt_to)
             except ValueError:
                 raise ValueError("Invalid date_to format")
                 
         # Фильтры по сумме
         if min_amount is not None:
-            query = query.filter(MerchantPayment.amount >= min_amount)
+            query = query.filter(UnifiedPayment.amount >= min_amount)
         if max_amount is not None:
-            query = query.filter(MerchantPayment.amount <= max_amount)
+            query = query.filter(UnifiedPayment.amount <= max_amount)
             
         # Фильтр по QR коду
         if qr_code_id is not None:
-            query = query.filter(MerchantPayment.qr_code_id == qr_code_id)
-            
+            query = query.filter(UnifiedPayment.qr_code_id == qr_code_id)
+
         # Фильтр по торговой точке
         if outlet_id is not None:
-            query = query.filter(MerchantPayment.outlet_id == outlet_id)
+            query = query.filter(UnifiedPayment.outlet_id == outlet_id)
             
         return query
     
@@ -83,13 +84,13 @@ class MerchantPaymentService:
         limit: int = 50,
         offset: int = 0,
         **filters
-    ) -> List[MerchantPayment]:
+    ) -> List[UnifiedPayment]:
         """
         Получает список платежей с пагинацией и фильтрацией
         """
         query = self.build_payments_query(merchant, **filters)
         return query.order_by(
-            MerchantPayment.created_at.desc()
+            UnifiedPayment.created_at.desc()
         ).offset(offset).limit(limit).all()
     
     def export_payments_csv(
@@ -101,14 +102,14 @@ class MerchantPaymentService:
         Экспортирует платежи в CSV формат
         """
         query = self.build_payments_query(merchant, **filters)
-        payments = query.order_by(MerchantPayment.created_at.desc()).all()
+        payments = query.order_by(UnifiedPayment.created_at.desc()).all()
         
         # Формируем CSV
         buf = io.StringIO()
         writer = csv.writer(buf)
         writer.writerow([
             "date", "amount", "currency", "status", 
-            "transaction_id", "bank_transaction_id", "qr_code_id"
+            "transaction_id", "payment_reference", "qr_code_id"
         ])
         
         for payment in payments:
@@ -116,9 +117,9 @@ class MerchantPaymentService:
                 payment.created_at.isoformat() if payment.created_at else "",
                 payment.amount,
                 payment.currency,
-                payment.status,
+                payment.status.value,
                 payment.transaction_id or "",
-                payment.bank_transaction_id or "",
+                payment.payment_reference or "",
                 payment.qr_code_id or ""
             ])
         
@@ -139,11 +140,11 @@ class MerchantPaymentService:
         start_date = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
         
         # Получаем все платежи за период
-        payments = self.db.query(MerchantPayment).filter(
+        payments = self.db.query(UnifiedPayment).filter(
             and_(
-                MerchantPayment.merchant_id == merchant.id,
-                MerchantPayment.created_at >= start_date,
-                MerchantPayment.created_at <= end_date
+                UnifiedPayment.merchant_id == merchant.id,
+                UnifiedPayment.created_at >= start_date,
+                UnifiedPayment.created_at <= end_date
             )
         ).all()
         
@@ -210,23 +211,23 @@ class MerchantPaymentService:
                 end_datetime = now
         
         # Получаем платежи за период
-        query = self.db.query(MerchantPayment).filter(
-            MerchantPayment.merchant_id == merchant.id
+        query = self.db.query(UnifiedPayment).filter(
+            UnifiedPayment.merchant_id == merchant.id
         )
         
         if start_datetime:
-            query = query.filter(MerchantPayment.created_at >= start_datetime)
+            query = query.filter(UnifiedPayment.created_at >= start_datetime)
         
         if end_datetime:
-            query = query.filter(MerchantPayment.created_at <= end_datetime)
+            query = query.filter(UnifiedPayment.created_at <= end_datetime)
         
         payments = query.all()
         
         # Вычисляем статистику
         total_payments = len(payments)
         total_amount = sum(p.amount for p in payments)
-        successful_payments = len([p for p in payments if p.status == "completed"])
-        failed_payments = len([p for p in payments if p.status == "failed"])
+        successful_payments = len([p for p in payments if p.status.value == "completed"])
+        failed_payments = len([p for p in payments if p.status.value == "failed"])
         
         success_rate = (successful_payments / total_payments * 100) if total_payments > 0 else 0
         average_amount = (total_amount / total_payments) if total_payments > 0 else 0
@@ -234,7 +235,7 @@ class MerchantPaymentService:
         # Получаем распределение по статусам
         status_distribution = {}
         for payment in payments:
-            status = payment.status
+            status = payment.status.value
             if status not in status_distribution:
                 status_distribution[status] = 0
             status_distribution[status] += 1
@@ -261,28 +262,28 @@ class MerchantPaymentService:
         logger.info(f"Вычисляем быструю статистику для продавца ID: {merchant.id}")
         
         # Считаем общие метрики за все время
-        total_payments = self.db.query(MerchantPayment).filter(
-            MerchantPayment.merchant_id == merchant.id
+        total_payments = self.db.query(UnifiedPayment).filter(
+            UnifiedPayment.merchant_id == merchant.id
         ).count()
         
-        successful_payments = self.db.query(MerchantPayment).filter(
+        successful_payments = self.db.query(UnifiedPayment).filter(
             and_(
-                MerchantPayment.merchant_id == merchant.id,
-                MerchantPayment.status == 'completed'
+                UnifiedPayment.merchant_id == merchant.id,
+                UnifiedPayment.status == 'completed'
             )
         ).count()
         
-        total_revenue = self.db.query(func.sum(MerchantPayment.amount)).filter(
+        total_revenue = self.db.query(func.sum(UnifiedPayment.amount)).filter(
             and_(
-                MerchantPayment.merchant_id == merchant.id,
-                MerchantPayment.status == 'completed'
+                UnifiedPayment.merchant_id == merchant.id,
+                UnifiedPayment.status == 'completed'
             )
         ).scalar() or 0
         
-        avg_check = self.db.query(func.avg(MerchantPayment.amount)).filter(
+        avg_check = self.db.query(func.avg(UnifiedPayment.amount)).filter(
             and_(
-                MerchantPayment.merchant_id == merchant.id,
-                MerchantPayment.status == 'completed'
+                UnifiedPayment.merchant_id == merchant.id,
+                UnifiedPayment.status == 'completed'
             )
         ).scalar() or 0
         
