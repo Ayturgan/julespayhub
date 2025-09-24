@@ -5,6 +5,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from app.models.merchant import Merchant, MerchantPayment
+from app.models.payment import TransactionStatus
 from datetime import datetime, timezone, timedelta, date
 from typing import Optional, List, Dict, Any
 import io
@@ -42,9 +43,20 @@ class MerchantPaymentService:
             MerchantPayment.merchant_id == merchant.id
         )
         
-        # Фильтр по статусу
+        # Фильтр по статусу (поддержка unified статусов)
         if status:
-            query = query.filter(MerchantPayment.status == status)
+            # Если передан unified-статус, маппим на агрегированные
+            status_map = {
+                TransactionStatus.COMPLETED.value: "completed",
+                TransactionStatus.ABORTED.value: "failed",
+                TransactionStatus.PENDING.value: "pending",
+                TransactionStatus.PREPARING.value: "pending",
+                TransactionStatus.PREPARED.value: "pending",
+                TransactionStatus.COMMITTING.value: "pending",
+                TransactionStatus.ABORTING.value: "failed",
+            }
+            mapped = status_map.get(status, status)
+            query = query.filter(MerchantPayment.status == mapped)
             
         # Фильтры по дате
         if date_from:
@@ -226,7 +238,7 @@ class MerchantPaymentService:
         total_payments = len(payments)
         total_amount = sum(p.amount for p in payments)
         successful_payments = len([p for p in payments if p.status == "completed"])
-        failed_payments = len([p for p in payments if p.status == "failed"])
+        failed_payments = len([p for p in payments if p.status != "completed"])
         
         success_rate = (successful_payments / total_payments * 100) if total_payments > 0 else 0
         average_amount = (total_amount / total_payments) if total_payments > 0 else 0
