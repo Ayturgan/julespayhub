@@ -170,3 +170,9 @@ qrpayhub.db
 # uv
 .uv/
 
+
+# Core dumps
+/core
+core
+*.core
+*.dump
