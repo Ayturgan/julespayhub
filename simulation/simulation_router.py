@@ -136,7 +136,7 @@ async def bank_selection_page(
         
         # Если не найден в QRCode, пробуем найти в AdminQRCode
         if not qr_code:
-            from app.models.admin import AdminQRCode
+            from app.models.merchant import QRCode as AdminQRCode
             logger.info("Поиск админ QR кода")
             admin_qr_code = db.query(AdminQRCode).filter(AdminQRCode.qr_token == token).first()
             
@@ -266,7 +266,7 @@ async def payment_page(
         
         # Если не найден в QRCode, пробуем найти в AdminQRCode (для админ QR-кодов)
         if not qr_code:
-            from app.models.admin import AdminQRCode
+            from app.models.merchant import QRCode as AdminQRCode
             admin_qr_code = db.query(AdminQRCode).filter(AdminQRCode.qr_token == token).first()
             
             if not admin_qr_code:

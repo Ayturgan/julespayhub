@@ -1,73 +1,9 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, ForeignKey, Index, Enum
+from sqlalchemy import Column, Integer, String, Float, DateTime, Boolean, Text, ForeignKey, Index
 from sqlalchemy.sql import func
 from app.database import Base
-import enum
+from app.models.enums import TransactionStatus
 
-class TransactionStatus(enum.Enum):
-    """Статусы двухфазных транзакций"""
-    PENDING = "pending"           # Исходное состояние
-    PREPARING = "preparing"       # QRPayHub начал фазу подготовки
-    PREPARED = "prepared"         # Оба банка подтвердили готовность, деньги зарезервированы
-    COMMITTING = "committing"     # QRPayHub дал команду на выполнение
-    COMPLETED = "completed"       # Транзакция успешно завершена
-    ABORTING = "aborting"         # QRPayHub дал команду на отмену
-    ABORTED = "aborted"           # Транзакция отменена, средства возвращены
-
-class PaymentRequest(Base):
-    """Модель для хранения платежных запросов"""
-    __tablename__ = "payment_requests"
-
-    id = Column(Integer, primary_key=True, index=True)
-    token = Column(String(255), unique=True, index=True, nullable=False)
-    
-    # Данные получателя
-    receiver_account = Column(String(50), nullable=False)
-    receiver_bank_code = Column(String(20), nullable=False)
-    receiver_name = Column(String(255), nullable=False)
-    
-    # Связь с продавцом (опционально)
-    merchant_id = Column(Integer, ForeignKey("merchants.id"), nullable=True)
-    
-    # Данные платежа
-    description = Column(Text, nullable=False)
-    amount = Column(Float, nullable=True)  # null для ручного ввода
-    currency = Column(String(3), default="KGS")
-    payment_reference = Column(String(100), unique=True, nullable=False)
-    
-    # Метаданные
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    expires_at = Column(DateTime(timezone=True), nullable=False)
-    is_used = Column(Boolean, default=False)
-    
-    # Статус платежа
-    is_paid = Column(Boolean, default=False)
-    transaction_id = Column(String(100), nullable=True)
-    payer_phone = Column(String(20), nullable=True)
-    paid_amount = Column(Float, nullable=True)
-    paid_at = Column(DateTime(timezone=True), nullable=True)
-    
-    # Двухфазная транзакция
-    status = Column(Enum(TransactionStatus), default=TransactionStatus.PENDING, nullable=False, index=True)
-    sender_bank_code = Column(String(20), nullable=True, index=True)  # Банк отправителя
-    payer_bank_code = Column(String(20), nullable=True, index=True)  # Банк плательщика
-    sender_account = Column(String(50), nullable=True)  # Счет плательщика
-    
-    # Временные метки для двухфазного протокола
-    prepare_started_at = Column(DateTime(timezone=True), nullable=True)
-    prepare_completed_at = Column(DateTime(timezone=True), nullable=True)
-    commit_started_at = Column(DateTime(timezone=True), nullable=True)
-    commit_completed_at = Column(DateTime(timezone=True), nullable=True)
-    abort_started_at = Column(DateTime(timezone=True), nullable=True)
-    abort_completed_at = Column(DateTime(timezone=True), nullable=True)
-    
-    # Результаты фазы подготовки от банков
-    sender_prepare_result = Column(Text, nullable=True)     # JSON результат от банка-отправителя
-    receiver_prepare_result = Column(Text, nullable=True)   # JSON результат от банка-получателя
-    
-    # Дополнительные метаданные для отладки
-    two_phase_metadata = Column(Text, nullable=True)        # JSON с дополнительной информацией о процессе
-    # Торговая точка (если создан через конкретный outlet)
-    outlet_id = Column(Integer, ForeignKey("trading_points.id"), nullable=True)
+from app.models.unified import UnifiedPayment as PaymentRequest
 
 class Bank(Base):
     """Модель для банков-партнеров с полной аутентификацией"""

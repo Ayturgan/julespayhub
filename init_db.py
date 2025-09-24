@@ -669,70 +669,76 @@ def create_test_merchant_qr_codes(session):
     return qr_codes
 
 def create_test_merchant_payments(session):
-    """Создание тестовых платежей продавцов"""
-    print("💰 Создание тестовых платежей продавцов...")
-    
+    """Создание тестовых платежей продавцов (использует UnifiedPayment)"""
+    print("💰 Создание тестовых платежей продавцов (унифицированные)...")
+
     merchants = session.query(Merchant).all()
     qr_codes = session.query(QRCode).all()
     banks = session.query(Bank).all()
-    
+
     if not merchants:
         print("⚠️ Нет продавцов для создания платежей")
         return []
-    
+
     merchant_payments = []
     now = datetime.now(timezone.utc)
-    
-    # Создаем платежи для каждого продавца
+
     for merchant in merchants:
-        # Пропускаем новых тестовых пользователей
         if merchant.email in ["test1@example.com", "test2@example.com"]:
             print(f"  ⏭️ Пропускаем платежи для {merchant.name} (тестовый пользователь)")
             continue
-            
+
         print(f"  📊 Создание платежей для {merchant.name}...")
-        
-        # Создаем 10 платежей для каждого продавца
+
         for i in range(10):
-            # Распределяем платежи по времени за последние 7 дней
-            if i < 3:  # Платежи за сегодня
-                payment_time = now - timedelta(hours=i*3)
-            elif i < 6:  # Платежи за вчера  
-                payment_time = now - timedelta(days=1, hours=(i-3)*4)
-            elif i < 8:  # Платежи за позавчера
-                payment_time = now - timedelta(days=2, hours=(i-6)*5)
-            else:  # Платежи за 3 дня назад
-                payment_time = now - timedelta(days=3, hours=(i-8)*6)
-            
-            # 80% успешных платежей (8 из 10)
-            is_successful = i < 8  # Первые 8 платежей успешные
-            
-            # Выбираем случайный банк
+            if i < 3:
+                payment_time = now - timedelta(hours=i * 3)
+            elif i < 6:
+                payment_time = now - timedelta(days=1, hours=(i - 3) * 4)
+            elif i < 8:
+                payment_time = now - timedelta(days=2, hours=(i - 6) * 5)
+            else:
+                payment_time = now - timedelta(days=3, hours=(i - 8) * 6)
+
+            is_successful = i < 8
             bank = banks[i % len(banks)] if banks else None
-            
+            receiver_bank_code = banks[(i + 1) % len(banks)].code if banks else "DEMO"
+
             payment = MerchantPayment(
                 merchant_id=merchant.id,
                 qr_code_id=qr_codes[i % len(qr_codes)].id if qr_codes else None,
-                outlet_id=None,
-                amount=round(100.0 + (i * 150) + (merchant.id * 50), 2),  # Разные суммы
+                amount=round(100.0 + (i * 150) + (merchant.id * 50), 2),
                 currency="KGS",
-                status="completed" if is_successful else "failed",
+                status=TransactionStatus.COMPLETED if is_successful else TransactionStatus.ABORTED,
+                description=f"Платеж продавца #{i + 1} для {merchant.name}",
                 payer_phone=f"+996700{123456 + (merchant.id * 10) + i}",
                 payer_bank_code=bank.code if bank else "DEMO",
-                transaction_id=f"TX{merchant.id:03d}{i+1:03d}",
+                sender_account=None,
+                sender_bank_code=bank.code if bank else None,
+                transaction_id=f"TX{merchant.id:03d}{i + 1:03d}",
                 paid_at=payment_time if is_successful else None,
-                created_at=payment_time
+                paid_amount=round(100.0 + (i * 150) + (merchant.id * 50), 2) if is_successful else None,
+                created_at=payment_time,
+                receiver_account=merchant.bank_account,
+                receiver_bank_code=receiver_bank_code,
+                receiver_name=merchant.name,
             )
             session.add(payment)
             merchant_payments.append(payment)
-            
+
             status_emoji = "✅" if is_successful else "❌"
-            print(f"    {status_emoji} Платеж {payment.transaction_id} - {payment.amount} {payment.currency} ({payment.status})")
-    
+            print(
+                f"    {status_emoji} Платеж {payment.transaction_id} - {payment.amount} {payment.currency} ({payment.status.value})"
+            )
+
     session.commit()
     print(f"💰 Создано {len(merchant_payments)} платежей продавцов!")
-    print(f"   ✅ Успешных: {len([p for p in merchant_payments if p.status == 'completed'])}")
-    print(f"   ❌ Неудачных: {len([p for p in merchant_payments if p.status == 'failed'])}")
+    print(
+        f"   ✅ Успешных: {len([p for p in merchant_payments if p.status == TransactionStatus.COMPLETED])}"
+    )
+    print(
+        f"   ❌ Неуспешных: {len([p for p in merchant_payments if p.status != TransactionStatus.COMPLETED])}"
+    )
     return merchant_payments
 
 def create_test_merchant_settings(session):
@@ -1161,9 +1167,8 @@ def main():
             print(f"  🏦 Банков: {session.query(Bank).count()}")
             print(f"  🏪 Продавцов: {session.query(Merchant).count()}")
             print(f"  🏢 Торговых точек: {session.query(TradingPoint).count()}")
-            print(f"  💳 Платежей (requests): {session.query(PaymentRequest).count()}")
-            print(f"  📱 QR-кодов: {session.query(QRCode).count()}")
-            print(f"  💰 Платежей продавцов: {session.query(MerchantPayment).count()}")
+            print(f"  💳 Unified платежей: {session.query(PaymentRequest).count()}")
+            print(f"  📱 Unified QR-кодов: {session.query(QRCode).count()}")
             print(f"  👨‍💼 Администраторов: {session.query(Admin).count()}")
             
             print(f"\n🔄 Двухфазные транзакции:")

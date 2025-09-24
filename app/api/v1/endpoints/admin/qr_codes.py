@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.admin import Admin
-from app.models.admin import AdminQRCode
+from app.models.merchant import QRCode
 from app.models.payment import PaymentRequest, TransactionStatus
 from app.schemas.payment import PaymentRequestCreate
 from app.services.hybrid_logging_service import hybrid_logging_service
