@@ -113,100 +113,31 @@ async def bank_selection_page(
     Страница выбора банка для оплаты
     """
     try:
-        # Проверяем срок действия QR кода
-        print(f"🔍 DEBUG: Поиск QR кода по токену: {token[:20]}...")
+        # Пытаемся найти QR по прямому токену или по UUID из защищенного токена
         logger.info(f"Поиск QR кода по токену: {token[:20]}...")
         qr_code = db.query(QRCode).filter(QRCode.qr_token == token).first()
-        
-        if qr_code:
-            print(f"✅ DEBUG: Найден QR код: {qr_code.name}, expires_at={qr_code.expires_at}")
-            logger.info(f"Найден QR код: {qr_code.name}, expires_at={qr_code.expires_at}")
-        else:
-            print(f"❌ DEBUG: QR код не найден по прямому токену")
-            logger.info("QR код не найден по прямому токену")
-        
-        # Если не найден по qr_token, пробуем найти по защищенному токену
         if not qr_code:
             token_uuid = SecureTokenService.extract_uuid_from_token(token)
             if token_uuid:
-                logger.info(f"Поиск QR кода по UUID: {token_uuid}")
                 qr_code = db.query(QRCode).filter(QRCode.qr_token == token_uuid).first()
-                if qr_code:
-                    logger.info(f"Найден QR код по UUID: {qr_code.name}, expires_at={qr_code.expires_at}")
-        
-        # Если не найден в QRCode, пробуем найти в AdminQRCode
-        if not qr_code:
-            from app.models.merchant import QRCode as AdminQRCode
-            logger.info("Поиск админ QR кода")
-            admin_qr_code = db.query(AdminQRCode).filter(AdminQRCode.qr_token == token).first()
-            
-            if admin_qr_code:
-                logger.info(f"Найден админ QR код: {admin_qr_code.name}, expires_at={admin_qr_code.expires_at}")
-            else:
-                logger.info("Админ QR код не найден по прямому токену")
-            
-            if not admin_qr_code:
-                if token_uuid:
-                    logger.info(f"Поиск админ QR кода по UUID: {token_uuid}")
-                    admin_qr_code = db.query(AdminQRCode).filter(AdminQRCode.qr_token == token_uuid).first()
-                    if admin_qr_code:
-                        logger.info(f"Найден админ QR код по UUID: {admin_qr_code.name}, expires_at={admin_qr_code.expires_at}")
-            
-            if admin_qr_code:
-                # Проверяем срок действия админ QR кода
-                if admin_qr_code.expires_at:
-                    current_time = datetime.now(timezone.utc)
-                    # Приводим expires_at к UTC, если у него нет часового пояса
-                    expires_at_utc = admin_qr_code.expires_at
-                    if expires_at_utc.tzinfo is None:
-                        expires_at_utc = expires_at_utc.replace(tzinfo=timezone.utc)
-                    
-                    logger.info(f"Проверка админ QR кода: expires_at={expires_at_utc}, current_time={current_time}")
-                    if expires_at_utc < current_time:
-                        logger.info(f"Админ QR код истек: {admin_qr_code.name}")
-                        return templates.TemplateResponse("simulation/qr_expired.html", get_simulation_template_context(
-                            request=request,
-                            qr_code=admin_qr_code,
-                            page_title="QR код истек - QRPayHub"
-                        ))
-                    else:
-                        logger.info(f"Админ QR код действителен: {admin_qr_code.name}")
-                
-                # Проверяем количество использований админ QR кода
-                if admin_qr_code.max_uses and admin_qr_code.current_uses >= admin_qr_code.max_uses:
-                    logger.warning(f"Админ QR код уже использован максимальное количество раз: {admin_qr_code.name}, max_uses={admin_qr_code.max_uses}, current_uses={admin_qr_code.current_uses}")
-                    return templates.TemplateResponse("simulation/qr_used.html", get_simulation_template_context(
-                        request=request,
-                        qr_code=admin_qr_code,
-                        page_title="QR код уже использован - QRPayHub"
-                    ))
-        
-        # Проверяем срок действия обычного QR кода
+
+        # Проверяем срок действия QR-кода
         if qr_code and qr_code.expires_at:
             current_time = datetime.now(timezone.utc)
             # Приводим expires_at к UTC, если у него нет часового пояса
             expires_at_utc = qr_code.expires_at
             if expires_at_utc.tzinfo is None:
-                print(f"🕐 DEBUG: expires_at без часового пояса, добавляем UTC")
                 expires_at_utc = expires_at_utc.replace(tzinfo=timezone.utc)
-            else:
-                print(f"🕐 DEBUG: expires_at уже с часовым поясом: {expires_at_utc.tzinfo}")
-            
-            print(f"⏰ DEBUG: Проверка QR кода: expires_at={expires_at_utc}, current_time={current_time}")
             logger.info(f"Проверка QR кода: expires_at={expires_at_utc}, current_time={current_time}")
             if expires_at_utc < current_time:
-                print(f"🚫 DEBUG: QR код истек: {qr_code.name}")
                 logger.info(f"QR код истек: {qr_code.name}")
                 return templates.TemplateResponse("simulation/qr_expired.html", get_simulation_template_context(
                     request=request,
                     qr_code=qr_code,
                     page_title="QR код истек - QRPayHub"
                 ))
-            else:
-                print(f"✅ DEBUG: QR код действителен: {qr_code.name}")
-                logger.info(f"QR код действителен: {qr_code.name}")
         
-        # Проверяем количество использований QR кода
+        # Проверяем количество использований
         if qr_code and qr_code.max_uses and qr_code.current_uses >= qr_code.max_uses:
             print(f"⚠️ DEBUG: QR код уже использован максимальное количество раз: {qr_code.name}")
             logger.warning(f"QR код уже использован максимальное количество раз: {qr_code.name}, max_uses={qr_code.max_uses}, current_uses={qr_code.current_uses}")
@@ -249,30 +180,15 @@ async def payment_page(
     
     try:
         # Инициализируем переменные
-        qr_code = None
-        admin_qr_code = None
         token_uuid = None
         payment_request = None
         
-        # Сначала пробуем найти QR-код в таблице QRCode (для merchant QR-кодов)
+        # Ищем QR-код (merchant/admin unified)
         qr_code = db.query(QRCode).filter(QRCode.qr_token == token).first()
-        
-        # Если не найден по qr_token, пробуем найти по защищенному токену
         if not qr_code:
-            # Извлекаем UUID из защищенного токена
             token_uuid = SecureTokenService.extract_uuid_from_token(token)
             if token_uuid:
                 qr_code = db.query(QRCode).filter(QRCode.qr_token == token_uuid).first()
-        
-        # Если не найден в QRCode, пробуем найти в AdminQRCode (для админ QR-кодов)
-        if not qr_code:
-            from app.models.merchant import QRCode as AdminQRCode
-            admin_qr_code = db.query(AdminQRCode).filter(AdminQRCode.qr_token == token).first()
-            
-            if not admin_qr_code:
-                # Пробуем найти по защищенному токену в AdminQRCode
-                if token_uuid:
-                    admin_qr_code = db.query(AdminQRCode).filter(AdminQRCode.qr_token == token_uuid).first()
         
         # Проверяем срок действия QR кодов
         if qr_code and qr_code.expires_at:
@@ -293,23 +209,23 @@ async def payment_page(
             else:
                 logger.info(f"QR код действителен в payment_page: {qr_code.name}")
         
-        elif admin_qr_code and admin_qr_code.expires_at:
+        elif qr_code and qr_code.expires_at:
             current_time = datetime.now(timezone.utc)
             # Приводим expires_at к UTC, если у него нет часового пояса
-            expires_at_utc = admin_qr_code.expires_at
+            expires_at_utc = qr_code.expires_at
             if expires_at_utc.tzinfo is None:
                 expires_at_utc = expires_at_utc.replace(tzinfo=timezone.utc)
             
-            logger.info(f"Проверка админ QR кода в payment_page: expires_at={expires_at_utc}, current_time={current_time}")
+            logger.info(f"Проверка QR кода в payment_page: expires_at={expires_at_utc}, current_time={current_time}")
             if expires_at_utc < current_time:
-                logger.info(f"Админ QR код истек в payment_page: {admin_qr_code.name}")
+                logger.info(f"QR код истек в payment_page: {qr_code.name}")
                 return templates.TemplateResponse("simulation/qr_expired.html", get_simulation_template_context(
                     request=request,
-                    qr_code=admin_qr_code,
+                    qr_code=qr_code,
                     page_title="QR код истек - QRPayHub"
                 ))
             else:
-                logger.info(f"Админ QR код действителен в payment_page: {admin_qr_code.name}")
+                logger.info(f"QR код действителен в payment_page: {qr_code.name}")
         
         # Проверяем количество использований QR кодов
         if qr_code and qr_code.max_uses and qr_code.current_uses >= qr_code.max_uses:
@@ -320,76 +236,16 @@ async def payment_page(
                 page_title="QR код уже использован - QRPayHub"
             ))
         
-        if admin_qr_code and admin_qr_code.max_uses and admin_qr_code.current_uses >= admin_qr_code.max_uses:
-            logger.warning(f"Админ QR код уже использован максимальное количество раз в payment_page: {admin_qr_code.name}, max_uses={admin_qr_code.max_uses}, current_uses={admin_qr_code.current_uses}")
+        if qr_code and qr_code.max_uses and qr_code.current_uses >= qr_code.max_uses:
+            logger.warning(f"QR код уже использован максимальное количество раз в payment_page: {qr_code.name}, max_uses={qr_code.max_uses}, current_uses={qr_code.current_uses}")
             return templates.TemplateResponse("simulation/qr_used.html", get_simulation_template_context(
                 request=request,
-                qr_code=admin_qr_code,
+                qr_code=qr_code,
                 page_title="QR код уже использован - QRPayHub"
             ))
         
-        # Обрабатываем админ QR код
-        if admin_qr_code:
-            logger.info(f"🎯 Обрабатываем админ QR-код: {admin_qr_code.name}, токен: {admin_qr_code.qr_token[:20]}...")
-            
-            # Создаем PaymentRequest для админ QR-кода
-            payment_request = PaymentRequest(
-                token=admin_qr_code.qr_token,
-                receiver_account=admin_qr_code.admin.bank_account or "0000000000000000",
-                receiver_bank_code=admin_qr_code.admin.bank_code or "DEMO",
-                receiver_name=admin_qr_code.admin.organization_name or admin_qr_code.admin.full_name,
-                description=admin_qr_code.description or f"Платеж по QR-коду админа {admin_qr_code.name}",
-                amount=admin_qr_code.amount,
-                currency=admin_qr_code.currency or "KGS",
-                payment_reference=f"ADMIN_QR_{admin_qr_code.qr_token[:8]}",
-                expires_at=admin_qr_code.expires_at or (datetime.now() + timedelta(hours=24)),
-                status=TransactionStatus.PENDING,
-                merchant_id=None,  # Явно указываем, что это не мерчантский платеж
-                sender_bank_code=bank,  # Банк отправителя из параметра
-                payer_bank_code=bank,   # Банк плательщика = банк отправителя
-                sender_account="1234567890123456"  # Счет плательщика
-            )
-            
-            db.add(payment_request)
-            db.commit()
-            db.refresh(payment_request)
-            
-            logger.info(f"Создан PaymentRequest для админ QR-кода: ID={payment_request.id}")
-            
-            # Логируем событие сканирования админ QR-кода
-            TimelineService.record_event(
-                db=db,
-                payment_token=payment_request.token,
-                event_type="qr_scanned",
-                title="QR-код админа отсканирован",
-                description=f"QR-код админа '{admin_qr_code.name}' отсканирован в симуляторе банка",
-                actor="bank",
-                source="simulation",
-                status="success"
-            )
-            
-            # Получаем данные админа для отображения
-            admin_data = {
-                "name": admin_qr_code.admin.organization_name or admin_qr_code.admin.full_name,
-                "bank_name": admin_qr_code.admin.bank_name or "Демо Банк",
-                "email": admin_qr_code.admin.email,
-                "phone": admin_qr_code.admin.phone or "+996700123456",
-                "is_admin": True
-            }
-            
-            return templates.TemplateResponse("simulation/payment_page.html", get_simulation_template_context(
-                    request=request,
-                    payment_request=payment_request,
-                    receiver_bank=None,  # Будет определено позже
-                    sender_bank=None,     # Будет определено позже
-                    selected_bank_code=bank,
-                    full_token=token,
-                    page_title=f"Оплата QR-кодом админа - {payment_request.payment_reference}",
-                    admin_data=admin_data  # Передаем данные админа
-                ))
-        
-        # Обрабатываем обычный QR код
-        elif qr_code:
+        # Обрабатываем QR-код (merchant или admin — единая модель)
+        if qr_code:
             logger.info(f"🎯 Обрабатываем обычный QR-код: {qr_code.name}, токен: {qr_code.qr_token[:20]}...")
             logger.info(f"QR-код expires_at: {qr_code.expires_at}, текущее время: {datetime.now()}")
             logger.info(f"QR-код активен: {qr_code.is_active}, max_uses: {qr_code.max_uses}, current_uses: {qr_code.current_uses}")
@@ -431,38 +287,29 @@ async def payment_page(
                 payment_request = existing_payment
             else:
                 logger.info(f"Создаем новый PaymentRequest для QR-кода: {qr_code.name}")
-                # Создаем PaymentRequest на основе QR-кода
-                # Используем банк получателя из профиля продавца
-                receiver_bank_code = "DEMO"  # По умолчанию
-                if qr_code.merchant.bank_name:
-                    # Ищем банк по названию из профиля продавца
+                # Создаем PaymentRequest на основе QR-кода (unified)
+                receiver_bank_code = qr_code.receiver_bank_code if hasattr(qr_code, 'receiver_bank_code') else None
+                if not receiver_bank_code and getattr(qr_code, 'merchant', None) and qr_code.merchant.bank_name:
                     receiver_bank = db.query(Bank).filter(Bank.name == qr_code.merchant.bank_name).first()
-                    if receiver_bank:
-                        receiver_bank_code = receiver_bank.code
-                        logger.info(f"Найден банк получателя: {receiver_bank.name} (код: {receiver_bank.code})")
-                    else:
-                        logger.warning(f"Банк не найден по названию: {qr_code.merchant.bank_name}")
-                
+                    receiver_bank_code = receiver_bank.code if receiver_bank else "DEMO"
+
                 # Устанавливаем expires_at с значением по умолчанию, если оно None
                 expires_at = qr_code.expires_at
                 if expires_at is None:
                     expires_at = datetime.now() + timedelta(hours=24)  # 24 часа по умолчанию
                 
-                # Проверяем обязательные поля
-                if not qr_code.merchant.bank_account:
-                    logger.warning(f"У продавца {qr_code.merchant.name} не указан банковский счет")
-                
                 payment_request = PaymentRequest(
                     token=qr_code.qr_token,  # Используем qr_token как token
-                    receiver_account=qr_code.merchant.bank_account or "0000000000000000",
-                    receiver_bank_code=receiver_bank_code,
-                    receiver_name=qr_code.merchant.name,
+                    receiver_account=(qr_code.merchant.bank_account if getattr(qr_code, 'merchant', None) else (getattr(qr_code, 'receiver_account', None) or "0000000000000000")),
+                    receiver_bank_code=receiver_bank_code or "DEMO",
+                    receiver_name=(qr_code.merchant.name if getattr(qr_code, 'merchant', None) else getattr(qr_code, 'name', 'Получатель')),
                     description=qr_code.description or f"Платеж по QR-коду {qr_code.name}",
                     amount=qr_code.amount,
                     currency=qr_code.currency or "KGS",
                     payment_reference=f"QR_{qr_code.qr_token[:8]}",
                     expires_at=expires_at,
                     merchant_id=qr_code.merchant_id,
+                    admin_id=getattr(qr_code, 'admin_id', None),
                     status=TransactionStatus.PENDING,
                     sender_bank_code=bank,  # Банк отправителя из параметра
                     payer_bank_code=bank,   # Банк плательщика = банк отправителя
@@ -489,7 +336,7 @@ async def payment_page(
                     status="success"
                 )
         
-        # Если ни один QR код не найден, пробуем найти в PaymentRequest (для защищенных токенов)
+        # Если QR-код не найден, пробуем найти в PaymentRequest (для защищенных токенов)
         if not qr_code and not admin_qr_code:
             logger.info(f"QR код не найден, пробуем найти в PaymentRequest для токена: {token[:20]}...")
             
@@ -676,10 +523,11 @@ async def receiver_bank_account(
     if not receiver_bank:
         receiver_bank = db.query(Bank).filter(Bank.code == "DEMO").first()
     
-    # Получаем последние платежи
-    recent_payments = db.query(MerchantPayment).filter(
-        MerchantPayment.merchant_id == merchant_id
-    ).order_by(MerchantPayment.created_at.desc()).limit(10).all()
+    # Получаем последние платежи (Unified)
+    recent_payments = db.query(PaymentRequest).filter(
+        PaymentRequest.merchant_id == merchant_id,
+        PaymentRequest.status == TransactionStatus.COMPLETED
+    ).order_by(PaymentRequest.created_at.desc()).limit(10).all()
     
     # Базовый баланс 10500 KGS
     total_balance = 10500.0
@@ -1290,10 +1138,10 @@ async def get_merchant_balance(
         raise HTTPException(status_code=404, detail="Merchant not found")
     
     # Получаем последние платежи
-    recent_payments = db.query(MerchantPayment).filter(
-        MerchantPayment.merchant_id == merchant_id,
-        MerchantPayment.status == "completed"
-    ).order_by(MerchantPayment.created_at.desc()).limit(5).all()
+    recent_payments = db.query(PaymentRequest).filter(
+        PaymentRequest.merchant_id == merchant_id,
+        PaymentRequest.status == TransactionStatus.COMPLETED
+    ).order_by(PaymentRequest.created_at.desc()).limit(5).all()
     
     # Базовый баланс 10500 KGS
     total_balance = 10500.0

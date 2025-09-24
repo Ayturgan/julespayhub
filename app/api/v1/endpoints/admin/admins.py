@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.admin import Admin
 from app.schemas.admin import AdminFullResponse, AdminProfileUpdate, AdminQRCodeCreate
-from app.schemas.payment import PaymentRequestCreate, QRResponse
 from app.services.hybrid_logging_service import hybrid_logging_service
 from app.services.two_phase_commit_service import two_phase_commit_service
 from app.models.payment import PaymentRequest, TransactionStatus    
@@ -116,7 +115,6 @@ async def reset_admin_password(admin_id: int, db: Session = Depends(get_db)):
 
 
 
-
 # === ПРОФИЛЬ АДМИНА ===
 
 @router.get("/profile", response_model=AdminFullResponse)
@@ -124,9 +122,7 @@ async def get_admin_profile(
     db: Session = Depends(get_db),
     current_admin = Depends(get_current_admin_user)  # Нужно будет добавить эту зависимость
 ):
-    """
-    Получение профиля текущего администратора
-    """
+    """Получение профиля текущего администратора"""
     admin = db.query(Admin).filter(Admin.id == current_admin["id"]).first()
     if not admin:
         raise HTTPException(status_code=404, detail="Admin not found")
@@ -145,9 +141,7 @@ async def update_admin_profile(
     db: Session = Depends(get_db),
     current_admin = Depends(get_current_admin_user)
 ):
-    """
-    Обновление профиля администратора
-    """
+    """Обновление профиля администратора"""
     admin = db.query(Admin).filter(Admin.id == current_admin["id"]).first()
     if not admin:
         raise HTTPException(status_code=404, detail="Admin not found")
