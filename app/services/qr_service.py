@@ -5,8 +5,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 from app.models.payment import PaymentRequest
 from app.models.merchant import Merchant, QRCode
-from app.schemas.payment import PaymentRequestCreate, QRResponse
-from app.schemas.merchant import QRCodeCreate, QRCodeResponse
+from app.schemas.unified import UnifiedQRCodeCreate, UnifiedQRCodeRead
 from app.services.token_service import SecureTokenService
 from app.services.reference_service import PaymentReferenceService
 from app.services.qr_security_service import QRSecurityService
@@ -32,9 +31,9 @@ class QRService:
     @staticmethod
     def create_payment_request(
         db: Session, 
-        payment_data: PaymentRequestCreate,
+        payment_data: UnifiedQRCodeCreate,
         merchant_id: Optional[int] = None
-    ) -> QRResponse:
+    ) -> dict:
         """Создание платежного запроса и защищенного QR-кода"""
         
         # Генерируем уникальный payment_reference согласно ТЗ
@@ -118,18 +117,18 @@ class QRService:
         except Exception:
             pass
         
-        return QRResponse(
-            qr_url=secure_qr_data["qr_url"],
-            token=secure_token,  # Возвращаем полный защищенный токен
-            expires_in=settings.QR_TOKEN_EXPIRE_MINUTES * 60
-        )
+        return {
+            "qr_url": secure_qr_data["qr_url"],
+            "token": secure_token,
+            "expires_in": settings.QR_TOKEN_EXPIRE_MINUTES * 60
+        }
     
     @staticmethod
     def create_merchant_qr_code(
         db: Session,
         merchant: Merchant,
-        qr_data: QRCodeCreate
-    ) -> QRCodeResponse:
+        qr_data: UnifiedQRCodeCreate
+    ) -> UnifiedQRCodeRead:
         """Создание QR-кода для продавца"""
         
         # Проверяем лимиты продавца
@@ -169,20 +168,22 @@ class QRService:
         # Генерируем QR-изображение
         qr_image = QRService.generate_qr_image(qr_code.qr_url)
         
-        return QRCodeResponse(
+        return UnifiedQRCodeRead(
             id=qr_code.id,
+            merchant_id=qr_code.merchant_id,
+            admin_id=getattr(qr_code, 'admin_id', None),
             name=qr_code.name,
             description=qr_code.description,
             amount=qr_code.amount,
             currency=qr_code.currency,
             qr_token=qr_code.qr_token,
             qr_url=qr_code.qr_url,
-            qr_image=qr_image,
             expires_at=qr_code.expires_at,
             max_uses=qr_code.max_uses,
             current_uses=qr_code.current_uses,
             is_active=qr_code.is_active,
-            created_at=qr_code.created_at
+            created_at=qr_code.created_at,
+            updated_at=qr_code.updated_at
         )
     
     @staticmethod
@@ -191,7 +192,7 @@ class QRService:
         merchant: Merchant,
         skip: int = 0,
         limit: int = 100
-    ) -> list[QRCodeResponse]:
+    ) -> list[UnifiedQRCodeRead]:
         """Получение QR-кодов продавца"""
         
         qr_codes = db.query(QRCode).filter(
@@ -199,20 +200,22 @@ class QRService:
         ).offset(skip).limit(limit).all()
         
         return [
-            QRCodeResponse(
+            UnifiedQRCodeRead(
                 id=qr.id,
+                merchant_id=qr.merchant_id,
+                admin_id=getattr(qr, 'admin_id', None),
                 name=qr.name,
                 description=qr.description,
                 amount=qr.amount,
                 currency=qr.currency,
                 qr_token=qr.qr_token,
                 qr_url=qr.qr_url,
-                qr_image=QRService.generate_qr_image(qr.qr_url),
                 expires_at=qr.expires_at,
                 max_uses=qr.max_uses,
                 current_uses=qr.current_uses,
                 is_active=qr.is_active,
-                created_at=qr.created_at
+                created_at=qr.created_at,
+                updated_at=qr.updated_at
             )
             for qr in qr_codes
         ]
@@ -222,7 +225,7 @@ class QRService:
         db: Session,
         merchant: Merchant,
         qr_code_id: int
-    ) -> Optional[QRCodeResponse]:
+    ) -> Optional[UnifiedQRCodeRead]:
         """Получение конкретного QR-кода продавца"""
         
         qr_code = db.query(QRCode).filter(
@@ -233,20 +236,22 @@ class QRService:
         if not qr_code:
             return None
         
-        return QRCodeResponse(
+        return UnifiedQRCodeRead(
             id=qr_code.id,
+            merchant_id=qr_code.merchant_id,
+            admin_id=getattr(qr_code, 'admin_id', None),
             name=qr_code.name,
             description=qr_code.description,
             amount=qr_code.amount,
             currency=qr_code.currency,
             qr_token=qr_code.qr_token,
             qr_url=qr_code.qr_url,
-            qr_image=QRService.generate_qr_image(qr_code.qr_url),
             expires_at=qr_code.expires_at,
             max_uses=qr_code.max_uses,
             current_uses=qr_code.current_uses,
             is_active=qr_code.is_active,
-            created_at=qr_code.created_at
+            created_at=qr_code.created_at,
+            updated_at=qr_code.updated_at
         )
     
     @staticmethod
@@ -254,8 +259,8 @@ class QRService:
         db: Session,
         merchant: Merchant,
         qr_code_id: int,
-        qr_data: QRCodeCreate
-    ) -> Optional[QRCodeResponse]:
+        qr_data: UnifiedQRCodeCreate
+    ) -> Optional[UnifiedQRCodeRead]:
         """Обновление QR-кода продавца"""
         
         qr_code = db.query(QRCode).filter(
@@ -277,20 +282,22 @@ class QRService:
         db.commit()
         db.refresh(qr_code)
         
-        return QRCodeResponse(
+        return UnifiedQRCodeRead(
             id=qr_code.id,
+            merchant_id=qr_code.merchant_id,
+            admin_id=getattr(qr_code, 'admin_id', None),
             name=qr_code.name,
             description=qr_code.description,
             amount=qr_code.amount,
             currency=qr_code.currency,
             qr_token=qr_code.qr_token,
             qr_url=qr_code.qr_url,
-            qr_image=QRService.generate_qr_image(qr_code.qr_url),
             expires_at=qr_code.expires_at,
             max_uses=qr_code.max_uses,
             current_uses=qr_code.current_uses,
             is_active=qr_code.is_active,
-            created_at=qr_code.created_at
+            created_at=qr_code.created_at,
+            updated_at=qr_code.updated_at
         )
     
     @staticmethod

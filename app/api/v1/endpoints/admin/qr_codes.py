@@ -5,7 +5,7 @@ from app.database import get_db
 from app.models.admin import Admin
 from app.models.merchant import QRCode
 from app.models.payment import PaymentRequest, TransactionStatus
-from app.schemas.payment import PaymentRequestCreate
+from app.schemas.unified import UnifiedQRCodeCreate, UnifiedQRCodeRead
 from app.services.hybrid_logging_service import hybrid_logging_service
 from app.services.two_phase_commit_service import two_phase_commit_service
 from app.core.dependencies import get_current_admin_user
@@ -86,16 +86,16 @@ async def create_admin_qr_code(
         # Устанавливаем время жизни QR кода (10 минут)
         expires_at = datetime.now() + timedelta(minutes=10)
         
-        # Создаем QR-код для админа
-        qr_code = AdminQRCode(
+        # Создаем QR-код для админа (Unified)
+        qr_code = QRCode(
             admin_id=admin.id,
             name=qr_data.name,
             description=qr_data.description or f"Платеж для {admin.organization_name}",
             amount=qr_data.amount,
             currency=qr_data.currency,
-            qr_token=token_uuid,  # Храним UUID
-            qr_url=f"{settings.BASE_URL}/pay?token={secure_token}",  # Полный защищенный токен
-            is_active=True,  # Явно устанавливаем активный статус
+            qr_token=token_uuid,
+            qr_url=f"{settings.BASE_URL}/pay?token={secure_token}",
+            is_active=True,
             expires_at=expires_at,
             max_uses=None
         )
@@ -185,8 +185,8 @@ async def get_admin_qr_codes(
         raise HTTPException(status_code=404, detail="Admin not found")
     
     # Получаем QR-коды админа
-    qr_codes = db.query(AdminQRCode).filter(
-        AdminQRCode.admin_id == admin.id
+    qr_codes = db.query(QRCode).filter(
+        QRCode.admin_id == admin.id
     ).order_by(AdminQRCode.created_at.desc()).offset(skip).limit(limit).all()
     
     # Отладочная информация
@@ -263,9 +263,9 @@ async def get_admin_qr_code(
         raise HTTPException(status_code=404, detail="Admin not found")
     
     # Получаем QR-код админа
-    qr_code = db.query(AdminQRCode).filter(
-        AdminQRCode.id == qr_id,
-        AdminQRCode.admin_id == admin.id
+    qr_code = db.query(QRCode).filter(
+        QRCode.id == qr_id,
+        QRCode.admin_id == admin.id
     ).first()
     
     if not qr_code:
@@ -300,9 +300,9 @@ async def get_admin_qr_code_image(
         raise HTTPException(status_code=404, detail="Admin not found")
     
     # Получаем QR-код админа
-    qr_code = db.query(AdminQRCode).filter(
-        AdminQRCode.id == qr_id,
-        AdminQRCode.admin_id == admin.id
+    qr_code = db.query(QRCode).filter(
+        QRCode.id == qr_id,
+        QRCode.admin_id == admin.id
     ).first()
     
     if not qr_code:
