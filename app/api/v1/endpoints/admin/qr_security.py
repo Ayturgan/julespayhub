@@ -72,9 +72,16 @@ async def create_secure_qr(
             "currency": currency
         }
         
-        # Создаем платежный запрос через основной сервис
-        from app.schemas.payment import PaymentRequestCreate
-        payment_request = PaymentRequestCreate(**payment_data)
+        # Создаем платежный запрос через unified-схему
+        from app.schemas.unified import UnifiedPaymentCreate
+        payment_request = UnifiedPaymentCreate(
+            amount=amount or 0,
+            currency=currency,
+            description=description,
+            receiver_name=receiver_name,
+            receiver_account=receiver_account,
+            receiver_bank_code=receiver_bank_code
+        )
         
         # Создаем QR с защитой через двухфазный коммит
         from app.services.two_phase_commit_service import two_phase_commit_service
@@ -84,6 +91,8 @@ async def create_secure_qr(
             amount=payment_request.amount,
             currency=payment_request.currency,
             description=payment_request.description,
+            receiver_name=payment_request.receiver_name,
+            receiver_account=payment_request.receiver_account,
             receiver_bank_code=payment_request.receiver_bank_code,
             status=TransactionStatus.PENDING
         )

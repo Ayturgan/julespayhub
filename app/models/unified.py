@@ -14,6 +14,7 @@ class UnifiedQRCode(Base):
     # Владелец QR: либо merchant, либо admin
     merchant_id = Column(Integer, ForeignKey("merchants.id"), nullable=True)
     admin_id = Column(Integer, ForeignKey("admins.id"), nullable=True)
+    outlet_id = Column(Integer, ForeignKey("trading_points.id"), nullable=True)
 
     # Основная информация
     name = Column(String(255), nullable=False)
@@ -59,6 +60,7 @@ class UnifiedPayment(Base):
 
     # Связь с QR-кодом
     qr_code_id = Column(Integer, ForeignKey("unified_qrcodes.id"), nullable=True)
+    outlet_id = Column(Integer, ForeignKey("trading_points.id"), nullable=True)
 
     # Основные поля
     amount = Column(Float, nullable=False)

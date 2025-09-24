@@ -20,10 +20,10 @@ from app.models.payment import Bank
 
 from app.schemas.merchant import (
     MerchantRegister, MerchantLogin, MerchantResponse, MerchantLoginResponse,
-    QRCodeCreate, QRCodeResponse,
     MerchantPaymentResponse, MerchantSettingsUpdate, MerchantSettingsResponse,
     MerchantStats, PaymentSummary, MerchantProfileUpdate
 )
+from app.schemas.unified import UnifiedQRCodeCreate, UnifiedQRCodeRead
 from app.core.merchant_dependencies import (
     get_current_merchant, get_verified_merchant,
     get_merchant_for_payments, get_merchant_for_reports, get_merchant_for_settings
@@ -106,9 +106,9 @@ async def get_banks_list(db: Session = Depends(get_db)):
 
 # === QR-КОДЫ ===
 
-@router.post("/qr-codes", response_model=QRCodeResponse)
+@router.post("/qr-codes", response_model=UnifiedQRCodeRead)
 async def create_qr_code(
-    qr_data: QRCodeCreate,
+    qr_data: UnifiedQRCodeCreate,
     current_merchant: Merchant = Depends(get_current_merchant),
     db: Session = Depends(get_db)
 ):
@@ -148,8 +148,6 @@ async def create_qr_code(
     now = datetime.now(timezone.utc)
     if qr_data.expires_at is not None:
         expires_at = qr_data.expires_at
-    elif qr_data.expires_in_minutes is not None:
-        expires_at = now + timedelta(minutes=qr_data.expires_in_minutes)
     else:
         expires_at = now + timedelta(minutes=settings.QR_TOKEN_EXPIRE_MINUTES)
     
@@ -180,7 +178,7 @@ async def create_qr_code(
         qr_url=f"{settings.BASE_URL}/pay?token={secure_token}",  # Полный защищенный токен
         expires_at=expires_at,  # Устанавливаем время истечения
         max_uses=qr_data.max_uses,
-        outlet_id=qr_data.outlet_id
+        outlet_id=getattr(qr_data, 'outlet_id', None)
     )
     
     try:
@@ -213,7 +211,7 @@ async def create_qr_code(
             }
         )
         
-        return qr_code
+        return UnifiedQRCodeRead.from_orm(qr_code)
         
     except Exception as e:
         db.rollback()
@@ -224,7 +222,7 @@ async def create_qr_code(
         )
 
 
-@router.get("/qr-codes", response_model=List[QRCodeResponse])
+@router.get("/qr-codes", response_model=List[UnifiedQRCodeRead])
 async def get_qr_codes(
     current_merchant: Merchant = Depends(get_current_merchant),
     db: Session = Depends(get_db),
@@ -246,7 +244,7 @@ async def get_qr_codes(
     return qr_codes
 
 
-@router.get("/qr-codes/{qr_code_id}", response_model=QRCodeResponse)
+@router.get("/qr-codes/{qr_code_id}", response_model=UnifiedQRCodeRead)
 async def get_qr_code(
     qr_code_id: int,
     current_merchant: Merchant = Depends(get_current_merchant),
@@ -269,7 +267,7 @@ async def get_qr_code(
             detail=error.to_dict()
         )
     
-    return qr_code
+    return UnifiedQRCodeRead.from_orm(qr_code)
 
 
 @router.get("/qr-codes/{qr_code_id}/stats")

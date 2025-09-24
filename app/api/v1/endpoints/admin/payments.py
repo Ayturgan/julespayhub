@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.schemas.payment import PaymentRequestCreate, QRResponse
+from app.schemas.unified import UnifiedPaymentCreate
 from app.models.payment import PaymentRequest, TransactionStatus, Bank, TransactionRecord
 from app.models.merchant import Merchant
 from app.models.admin import Admin
@@ -15,9 +15,9 @@ from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/payments")
 
-@router.post("/create-payment", response_model=QRResponse)
+@router.post("/create-payment")
 async def create_payment_request(
-    payment_data: PaymentRequestCreate,
+    payment_data: UnifiedPaymentCreate,
     request: Request,
     _: None = Depends(check_rate_limit("create-payment")),
     db: Session = Depends(get_db)
@@ -64,8 +64,16 @@ async def create_payment_request(
         currency=payment_data.currency,
         description=payment_data.description,
         merchant_id=payment_data.merchant_id,
-        sender_bank_code=payment_data.sender_bank_code,
+        admin_id=payment_data.admin_id,
+        qr_code_id=payment_data.qr_code_id,
+        receiver_name=payment_data.receiver_name,
+        receiver_account=payment_data.receiver_account,
         receiver_bank_code=payment_data.receiver_bank_code,
+        payer_phone=payment_data.payer_phone,
+        payer_bank_code=payment_data.payer_bank_code,
+        sender_account=payment_data.sender_account,
+        sender_bank_code=payment_data.sender_bank_code,
+        transaction_id=payment_data.transaction_id,
         status=TransactionStatus.PENDING
     )
     
