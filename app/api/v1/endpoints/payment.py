@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 import logging
 from app.database import get_db
-from app.models.payment import PaymentRequest, Bank
+from app.models.unified import UnifiedPayment as PaymentRequest
+from app.models.payment import Bank
 from app.services.hybrid_logging_service import hybrid_logging_service
 from app.schemas.payment import PaymentInfo, PaymentStatusWebhook, PaymentStatusResponse
 from app.schemas.bank import TwoPhasePaymentRequest, TwoPhasePaymentResponse

@@ -5,7 +5,8 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from app.database import get_db
-from app.models.payment import PaymentRequest, Bank
+from app.models.unified import UnifiedPayment as PaymentRequest
+from app.models.payment import Bank
 from app.services.token_service import SecureTokenService
 from app.services.error_handling_service import ErrorHandlingService, ErrorCode
 

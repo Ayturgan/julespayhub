@@ -13,7 +13,9 @@ import json
 from contextlib import asynccontextmanager
 
 from app.database import get_db
-from app.models.payment import PaymentRequest, TransactionStatus, TwoPhaseOperation
+from app.models.unified import UnifiedPayment as PaymentRequest
+from app.models.enums import TransactionStatus
+from app.models.payment import TwoPhaseOperation
 from app.services.two_phase_commit_service import two_phase_commit_service
 from app.services.timeline_service import TimelineService
 

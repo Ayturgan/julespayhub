@@ -5,7 +5,8 @@ from app.models.admin import Admin
 from app.schemas.admin import AdminFullResponse, AdminProfileUpdate, AdminQRCodeCreate
 from app.services.hybrid_logging_service import hybrid_logging_service
 from app.services.two_phase_commit_service import two_phase_commit_service
-from app.models.payment import PaymentRequest, TransactionStatus    
+from app.models.unified import UnifiedPayment as PaymentRequest
+from app.models.enums import TransactionStatus    
 from app.core.dependencies import get_current_admin_user
 from datetime import datetime, timedelta
 from sqlalchemy.exc import IntegrityError

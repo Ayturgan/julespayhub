@@ -2,8 +2,9 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
-from app.models.payment import BillingRecord, PaymentRequest, TransactionRecord
-from app.models.merchant import Merchant, MerchantPayment, QRCode
+from app.models.unified import UnifiedPayment as PaymentRequest, UnifiedQRCode as QRCode
+from app.models.payment import BillingRecord, TransactionRecord
+from app.models.merchant import Merchant, MerchantPayment
 from app.models.refund import RefundRequest, RefundOperation, RefundStatus, RefundType
 from app.schemas.payment import PaymentStatusWebhook
 from app.schemas.merchant import MerchantStats, PaymentSummary

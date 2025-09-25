@@ -4,8 +4,8 @@
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
-from app.models.merchant import Merchant, TradingPoint, MerchantPayment, QRCode
-from app.models.payment import PaymentRequest
+from app.models.unified import UnifiedPayment as PaymentRequest, UnifiedQRCode as QRCode
+from app.models.merchant import Merchant, TradingPoint, MerchantPayment
 from app.services.token_service import SecureTokenService
 from app.core.config import settings
 from datetime import datetime, timezone, timedelta

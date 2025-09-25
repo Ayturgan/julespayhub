@@ -15,8 +15,10 @@ import time
 from typing import Optional
 
 from app.database import get_db
-from app.models.payment import PaymentRequest, TwoPhaseOperation, Bank, TransactionStatus
-from app.models.merchant import QRCode, TradingPoint
+from app.models.unified import UnifiedPayment as PaymentRequest, UnifiedQRCode as QRCode
+from app.models.enums import TransactionStatus
+from app.models.payment import TwoPhaseOperation, Bank
+from app.models.merchant import TradingPoint
 from app.schemas.payment import PaymentInfo
 from app.schemas.bank import (
     TransactionPrepareRequest, TransactionPrepareResponse,
@@ -461,7 +463,8 @@ async def receiver_bank_account(
     logger.info(f"🏦 Открыт интерфейс банка-получателя для ID {merchant_id}")
     
     from app.models.merchant import Merchant, MerchantPayment
-    from app.models.admin import Admin, AdminQRCode
+    from app.models.admin import Admin
+    from app.models.unified import UnifiedQRCode as AdminQRCode
     
     # Проверяем, есть ли активный PaymentRequest с merchant_id=None (админский платеж)
     payment_request = db.query(PaymentRequest).filter(

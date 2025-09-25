@@ -2,8 +2,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.payment import PaymentRequest, TransactionRecord, PaymentLog, Bank
-from app.models.merchant import MerchantPayment, QRCode
+from app.models.unified import UnifiedPayment as PaymentRequest, UnifiedQRCode as QRCode
+from app.models.payment import TransactionRecord, PaymentLog, Bank
+from app.models.merchant import MerchantPayment
 from app.services.webhook_service import WebhookService
 from app.services.hybrid_logging_service import hybrid_logging_service
 
@@ -131,8 +132,8 @@ async def get_transaction_timeline(
     """
     Детальный таймлайн транзакции с техническими деталями
     """
-    from app.models.payment import PaymentRequest, PaymentLog
-    from app.models.merchant import QRCode
+    from app.models.unified import UnifiedPayment as PaymentRequest, UnifiedQRCode as QRCode
+    from app.models.payment import PaymentLog
     from app.models.timeline import TimelineEvent
     from sqlalchemy import and_
     import json

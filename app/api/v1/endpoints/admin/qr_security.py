@@ -2,7 +2,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.payment import PaymentRequest, TransactionStatus
+from app.models.unified import UnifiedPayment as PaymentRequest
+from app.models.enums import TransactionStatus
 from app.models.settings import SystemSetting
 from app.services.qr_security_service import QRSecurityService
 from app.services.reference_service import PaymentReferenceService

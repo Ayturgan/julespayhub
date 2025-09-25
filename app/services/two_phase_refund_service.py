@@ -13,7 +13,9 @@ import asyncio
 import aiohttp
 from contextlib import asynccontextmanager
 
-from app.models.payment import PaymentRequest, TransactionStatus, TwoPhaseOperation, Bank
+from app.models.unified import UnifiedPayment as PaymentRequest
+from app.models.enums import TransactionStatus
+from app.models.payment import TwoPhaseOperation, Bank
 from app.models.refund import RefundRequest, RefundOperation, RefundStatus, RefundType
 from app.models.merchant import MerchantPayment, Merchant
 from app.schemas.bank import (

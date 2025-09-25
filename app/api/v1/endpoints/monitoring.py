@@ -6,7 +6,7 @@ from app.services.realtime_monitoring_service import realtime_monitoring_service
 from app.models.payment import Bank
 from app.models.payment import TransactionRecord, BillingRecord
 from app.services.hybrid_logging_service import hybrid_logging_service
-from app.models.payment import PaymentRequest
+from app.models.unified import UnifiedPayment as PaymentRequest
 from app.models.merchant import Merchant, MerchantPayment
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta

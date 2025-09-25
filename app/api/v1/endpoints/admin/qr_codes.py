@@ -3,8 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException, Body, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.admin import Admin
-from app.models.merchant import QRCode
-from app.models.payment import PaymentRequest, TransactionStatus
+from app.models.unified import UnifiedQRCode as QRCode, UnifiedPayment as PaymentRequest
+from app.models.enums import TransactionStatus
 from app.schemas.unified import UnifiedQRCodeCreate, UnifiedQRCodeRead
 from app.services.hybrid_logging_service import hybrid_logging_service
 from app.services.two_phase_commit_service import two_phase_commit_service
@@ -187,7 +187,7 @@ async def get_admin_qr_codes(
     # Получаем QR-коды админа
     qr_codes = db.query(QRCode).filter(
         QRCode.admin_id == admin.id
-    ).order_by(AdminQRCode.created_at.desc()).offset(skip).limit(limit).all()
+    ).order_by(QRCode.created_at.desc()).offset(skip).limit(limit).all()
     
     # Отладочная информация
     logger.info(f"Найдено QR кодов админа: {len(qr_codes)}")
@@ -225,8 +225,8 @@ async def get_admin_qr_codes_stats(
         raise HTTPException(status_code=404, detail="Admin not found")
     
     # Получаем все QR-коды админа
-    qr_codes = db.query(AdminQRCode).filter(
-        AdminQRCode.admin_id == admin.id
+    qr_codes = db.query(QRCode).filter(
+        QRCode.admin_id == admin.id
     ).all()
     
     # Подсчитываем статистику
@@ -337,9 +337,9 @@ async def delete_admin_qr_code(
         raise HTTPException(status_code=404, detail="Admin not found")
     
     # Получаем QR-код админа
-    qr_code = db.query(AdminQRCode).filter(
-        AdminQRCode.id == qr_id,
-        AdminQRCode.admin_id == admin.id
+    qr_code = db.query(QRCode).filter(
+        QRCode.id == qr_id,
+        QRCode.admin_id == admin.id
     ).first()
     
     if not qr_code:

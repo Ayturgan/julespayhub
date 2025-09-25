@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from app.models.payment import PaymentRequest
+from app.models.unified import UnifiedPayment as PaymentRequest
 import logging
 
 logger = logging.getLogger(__name__)

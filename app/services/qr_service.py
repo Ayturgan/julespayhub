@@ -3,8 +3,8 @@ import qrcode
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from typing import Optional
-from app.models.payment import PaymentRequest
-from app.models.merchant import Merchant, QRCode
+from app.models.unified import UnifiedPayment as PaymentRequest, UnifiedQRCode as QRCode
+from app.models.merchant import Merchant
 from app.schemas.unified import UnifiedQRCodeCreate, UnifiedQRCodeRead
 from app.services.token_service import SecureTokenService
 from app.services.reference_service import PaymentReferenceService

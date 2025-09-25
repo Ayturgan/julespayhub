@@ -2,7 +2,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.payment import Bank, PaymentRequest, PaymentLog, TransactionRecord
+from app.models.unified import UnifiedPayment as PaymentRequest
+from app.models.payment import Bank, PaymentLog, TransactionRecord
 from app.models.merchant import Merchant, MerchantPayment
 from app.models.admin import Admin
 from sqlalchemy import func, and_, desc

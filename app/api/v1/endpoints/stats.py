@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.payment import Bank, PaymentRequest
+from app.models.unified import UnifiedPayment as PaymentRequest
+from app.models.payment import Bank
 from app.models.merchant import Merchant, MerchantPayment
 from app.models.admin import Admin
 from datetime import datetime, timezone, timedelta

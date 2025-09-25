@@ -17,7 +17,8 @@ from app.models.payment import (
     Bank, PaymentRequest, PaymentLog, TransactionStatus, TwoPhaseOperation,
     TransactionRecord, BillingRecord, RateLimitRecord
 )
-from app.models.merchant import Merchant, QRCode, MerchantPayment, MerchantSettings, TradingPoint
+from app.models.unified import UnifiedQRCode as QRCode, UnifiedPayment as MerchantPayment
+from app.models.merchant import Merchant, MerchantSettings, TradingPoint
 from app.models.admin import Admin
 from app.models.audit import AuditLog
 from app.models.timeline import TimelineEvent

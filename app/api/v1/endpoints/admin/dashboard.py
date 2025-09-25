@@ -3,7 +3,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.merchant import MerchantPayment
-from app.models.payment import Bank, PaymentRequest
+from app.models.unified import UnifiedPayment as PaymentRequest
+from app.models.payment import Bank
 from sqlalchemy import func, and_, desc
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any

@@ -6,7 +6,8 @@ import json
 import logging
 import httpx
 from datetime import datetime
-from app.models.payment import Bank, PaymentRequest
+from app.models.unified import UnifiedPayment as PaymentRequest
+from app.models.payment import Bank
 from app.schemas.payment import PaymentInfo, PaymentStatusWebhook
 from app.schemas.bank import (
     TransactionPrepareRequest, TransactionPrepareResponse,

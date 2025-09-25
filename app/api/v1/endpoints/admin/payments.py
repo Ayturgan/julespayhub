@@ -3,7 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.schemas.unified import UnifiedPaymentCreate
-from app.models.payment import PaymentRequest, TransactionStatus, Bank, TransactionRecord
+from app.models.unified import UnifiedPayment as PaymentRequest
+from app.models.enums import TransactionStatus
+from app.models.payment import Bank, TransactionRecord
 from app.models.merchant import Merchant
 from app.models.admin import Admin
 from app.services.qr_service import QRService

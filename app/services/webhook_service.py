@@ -3,8 +3,9 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from app.models.payment import PaymentRequest, TransactionRecord
-from app.models.merchant import Merchant, MerchantPayment, QRCode
+from app.models.unified import UnifiedPayment as PaymentRequest, UnifiedQRCode as QRCode
+from app.models.payment import TransactionRecord
+from app.models.merchant import Merchant, MerchantPayment
 from app.schemas.payment import PaymentStatusWebhook
 from app.services.token_service import SecureTokenService
 from app.services.billing_service import BillingService
@@ -178,7 +179,7 @@ class WebhookService:
             # попытаемся извлечь outlet_id из QRCode или самого payment_request
             outlet_id = None
             try:
-                from app.models.merchant import QRCode
+                from app.models.unified import UnifiedQRCode as QRCode
                 qr = db.query(QRCode).filter(QRCode.qr_token == payment_request.token).first()
                 outlet_id = getattr(qr, 'outlet_id', None)
             except Exception:
