@@ -1,0 +1,11 @@
+{
+  "daily_transaction_limit": 1000000.0,
+  "monthly_transaction_limit": 30000000.0,
+  "max_transactions_per_hour": 10,
+  "max_transactions_per_day": 50,
+  "duplicate_check_minutes": 5,
+  "history_lookup_days": 30,
+  "allow_threshold": 30,
+  "review_threshold": 70,
+  "block_threshold": 90
+}

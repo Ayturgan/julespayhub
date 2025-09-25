@@ -1,0 +1,74 @@
+{
+  "amount_limit": {
+    "max_single_transaction": 500000.0,
+    "max_daily_amount": 1000000.0,
+    "max_monthly_amount": 5000000.0,
+    "suspicious_round_amounts": true,
+    "weight": 2.0,
+    "enabled": true
+  },
+  "frequency": {
+    "max_transactions_per_hour": 10,
+    "max_transactions_per_day": 50,
+    "max_transactions_per_week": 200,
+    "weight": 1.5,
+    "enabled": true
+  },
+  "suspicious_patterns": {
+    "case_sensitive": false,
+    "exact_match": false,
+    "weight": 3.0,
+    "enabled": true,
+    "categories": [
+      "fraud_keywords",
+      "money_laundering_keywords",
+      "gambling_keywords"
+    ]
+  },
+  "geolocation": {
+    "allowed_countries": [
+      "KG",
+      "KZ",
+      "UZ",
+      "TJ",
+      "RU",
+      "CN"
+    ],
+    "suspicious_countries": [
+      "AF",
+      "IR",
+      "KP",
+      "SY"
+    ],
+    "require_ip": false,
+    "weight": 1.0,
+    "enabled": true
+  },
+  "phone_number": {
+    "validate_format": true,
+    "check_suspicious_patterns": true,
+    "weight": 1.0,
+    "enabled": true
+  },
+  "bank_code": {
+    "valid_bank_codes": [
+      "DEMIR",
+      "OPTIMA",
+      "MOBILE",
+      "BTA",
+      "RSK",
+      "KYRGYZSTAN"
+    ],
+    "check_self_payment": true,
+    "weight": 1.0,
+    "enabled": true
+  },
+  "time_based": {
+    "business_hours_start": 9,
+    "business_hours_end": 18,
+    "weekend_penalty": true,
+    "night_penalty": true,
+    "weight": 0.5,
+    "enabled": true
+  }
+}

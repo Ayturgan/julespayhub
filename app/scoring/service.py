@@ -9,6 +9,7 @@ import time
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
+from sqlalchemy.orm import Session
 
 from .schemas import (
     TransactionDataForScoring, 
@@ -20,12 +21,14 @@ from .schemas import (
 from .rules import (
     BaseRule, 
     AmountLimitRule, 
-    FrequencyRule, 
+    TransactionFrequencyRule, 
     GeolocationRule, 
     PhoneNumberRule, 
     BankCodeRule,
-    TimeBasedRule
+    TimeBasedRule,
+    SuspiciousPatternsRule
 )
+from .repository import TransactionRepository, create_transaction_repository
 from .exceptions import ScoringError, ScoringServiceError
 
 
@@ -34,9 +37,13 @@ class ScoringService:
     Основной сервис для оценки рисков транзакций
     """
     
-    def __init__(self, config: Optional[ScoringConfig] = None):
+    def __init__(self, config: Optional[ScoringConfig] = None, db_session: Optional[Session] = None):
         self.config = config or ScoringConfig()
         self.logger = logging.getLogger("scoring.service")
+        self.db_session = db_session
+        
+        # Создаем репозиторий для доступа к истории транзакций
+        self.repository = create_transaction_repository(db_session) if db_session else None
         
         # Инициализация правил
         self.rules = self._initialize_rules()
@@ -47,8 +54,9 @@ class ScoringService:
     def _initialize_rules(self) -> List[BaseRule]:
         """Инициализация правил скоринга"""
         rules = [
-            AmountLimitRule(),
-            FrequencyRule(),
+            AmountLimitRule(repository=self.repository),
+            TransactionFrequencyRule(repository=self.repository),
+            SuspiciousPatternsRule(),
             GeolocationRule(),
             PhoneNumberRule(),
             BankCodeRule(),
@@ -265,11 +273,15 @@ class ScoringService:
 _scoring_service_instance: Optional[ScoringService] = None
 
 
-def get_scoring_service(config: Optional[ScoringConfig] = None) -> ScoringService:
+def get_scoring_service(config: Optional[ScoringConfig] = None, db_session: Optional[Session] = None) -> ScoringService:
     """Получить экземпляр сервиса скоринга (singleton)"""
     global _scoring_service_instance
     
+    # Если передана новая сессия БД, создаем новый экземпляр
+    if db_session is not None:
+        return ScoringService(config, db_session)
+    
     if _scoring_service_instance is None:
-        _scoring_service_instance = ScoringService(config)
+        _scoring_service_instance = ScoringService(config, db_session)
     
     return _scoring_service_instance
